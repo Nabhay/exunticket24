@@ -54,4 +54,6 @@ def home():
     print(parser(tokeniser(open("components/index.html").read())))
     return render("index", locals() | globals())
 
+
+
 app.run(host="0.0.0.0", port=int(sys.argv[1]))
