@@ -67,14 +67,15 @@ def otp(a):
 
 @app.get("/")
 def home():
-    chat_window = open('components//chat_window.html').read()
-    previous_chats = open('components//previous_chats.html').read()
-    channels = open('components//channels.html').read()
+    chat_window = open('components/chat_window.html').read()
+    previous_chats = open('components/previous_chats.html').read()
+    channels = open('components/channels.html').read()
     return render("index", locals() | globals())
 
 @app.get("/login")
 def login():
     return render("login", locals() | globals())
+
 '''
 @app.get("/email")
 def email_send():
