@@ -7,4 +7,5 @@ def parse(path):
         x = x.strip()
         if "=" in x:
             env[x.split("=", 1)[0]] = json.loads(x.split("=", 1)[1])
+    print(env)
     return env

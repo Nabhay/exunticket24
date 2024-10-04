@@ -2,7 +2,9 @@ from flask import request, redirect, Response
 from monster import render, Flask, escapeString
 import sys, json
 import hashlib, base64
-import resend, secrets_parser
+import secret_parser
+#from docs import process_docs_in_folder
+#import resend
 
 app = Flask(__name__)
 
@@ -13,9 +15,9 @@ def make_response(data, mimetype=None, status=None):
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
 
-resend.api_key = secrets_parser.parse("variables.txt")["RESEND"]
-salt = secrets_parser.parse("variables.txt")["SALT"]
-
+#resend.api_key = secret_parser.parse("variables.txt")["RESEND"]
+salt = secret_parser.parse("variables.txt")["SALT"]
+'''
 def send_mail(to, subject, html, reply_to="exun@dpsrkp.net"):
     params = {
         "from": "Exun Clan <exun@exun.co>",
@@ -27,8 +29,8 @@ def send_mail(to, subject, html, reply_to="exun@dpsrkp.net"):
     email = resend.Emails.send(params)
     return email
 
-send_mail("aarav@dayal.org", "test", "<div>hi</div>")
-
+send_mail("nabhay.khanna@gmail.com", "test", "<div>hi</div>")
+'''
 daisyui = "<script>"+ open("public/pako.js").read()+ "</script>"+ """<script>
     function decompressGzippedString(base64String) {
         try {
@@ -65,12 +67,15 @@ def otp(a):
 
 @app.get("/")
 def home():
+    chat_window = open('components//chat_window.html').read()
+    previous_chats = open('components//previous_chats.html').read()
+    channels = open('components//channels.html').read()
     return render("index", locals() | globals())
 
 @app.get("/login")
 def login():
     return render("login", locals() | globals())
-
+'''
 @app.get("/email")
 def email_send():
     args=dict(request.args)
@@ -79,6 +84,7 @@ def email_send():
     for x in range(0, 6):
         otp_render=otp_render.replace(f"{{digit{x+1}}}", key[x])
     send_mail(args["email"], "Exun Registration Authentication OTP - "+key, otp_render)
-    return make_response(key)
+    return make_response(key)'''
+
 
 app.run(host="127.0.0.1", port=int(sys.argv[1]))
