@@ -34,6 +34,7 @@ def delete_api():
 @app.get("/get_all")
 def get_all_api():
     table = request.args.get("table")
+    count = request.args.get("count")
     return conn_table[table].get_all()
 
 
@@ -44,9 +45,5 @@ def insert_api():
     value = request.args.get("value")
     data = conn_table[table].get(key)
     conn_table[table].set(key, data.append(value))
-
-@app.get('/')
-def index():
-    return 'sup'
-
+    
 app.run("127.0.0.1", 3000)

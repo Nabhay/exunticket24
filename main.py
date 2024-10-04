@@ -3,6 +3,8 @@ from monster import render, Flask, escapeString
 import sys, json
 import hashlib, base64
 import secret_parser
+import requests
+
 #from docs import process_docs_in_folder
 #import resend
 
@@ -17,6 +19,8 @@ def make_response(data, mimetype=None, status=None):
 
 #resend.api_key = secret_parser.parse("variables.txt")["RESEND"]
 salt = secret_parser.parse("variables.txt")["SALT"]
+db_ip =  secret_parser.parse("variables.txt")["DB_IP"]
+
 '''
 def send_mail(to, subject, html, reply_to="exun@dpsrkp.net"):
     params = {
@@ -89,7 +93,10 @@ def email_send():
 
 @app.get('/get_chats')
 def get_chats():
-    headers = request.headers.get('')
+    client_get_sum = json.loads(request.headers.get('client_get_sum'))
 
-
+def check_sum(client, db):
+    for i in client:
+        if i[1] != hashlib.update(requests.request(db_ip+f"/get/?table=channels&key={i[0]}")):
+            return requests.request(db_ip+'/get')
 app.run(host="127.0.0.1", port=int(sys.argv[1]))
