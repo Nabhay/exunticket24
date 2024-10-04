@@ -44,7 +44,7 @@ class Connection:
             traceback.print_exc()
 
     def get(self, key):
-        return get(self, key)
+        return get(self.collection, key)
     
     def get_all(self):
         return get_all(self.collection)

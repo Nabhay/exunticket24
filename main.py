@@ -87,5 +87,9 @@ def email_send():
     send_mail(args["email"], "Exun Registration Authentication OTP - "+key, otp_render)
     return make_response(key)'''
 
+@app.get('/get_chats')
+def get_chats():
+    headers = request.headers.get('')
+
 
 app.run(host="127.0.0.1", port=int(sys.argv[1]))
