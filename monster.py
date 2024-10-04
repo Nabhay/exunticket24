@@ -2,11 +2,12 @@ from os import PathLike
 import uuid, json, base64, flask
 from flask import send_from_directory, request, Flask
 from urllib.parse import quote
+import traceback
 
 FlaskClass=Flask
 
 def escapeString(a):
-    return a.replace("\\", "\\\\").replace("\"", "\\\"").replace("'", "\\'").replace("\n", "\\n").replace("`", "\\`").replace("</script>", "</`+`script>")
+    return a.replace("\\", "\\\\").replace("\"", "\\\"").replace("'", "\\'").replace("\n", "\\n").replace("`", "\\`").replace("</script>", "</`+`script>").replace("<script>", "<`+`script>")
 
 def djb2_hash(s):
     hash = 5381
@@ -82,535 +83,387 @@ def render(path, variables={}):
         tokenise=True
     if tokenise:
         tokens=tokeniser(component)
-        component=renderTokens(parser(tokens=tokens), variables={"env":variables, "variables":{}})
-    replace_maps={}
-    for variable in variables:
-        if "{"+variable+"}" in component:
-            uid=uuid.uuid4().__str__()
-            replace_maps[uid]=variable
-            component=component.replace("{"+variable+"}", uid)
-    for x in replace_maps:
-        out=variables[replace_maps[x]]
-        if type(out) in [int, float, dict]:
-            out=json.dumps(out)
-        if type(out)==list:
-            out="\n".join([str(x) for x in out])
-        if isinstance(out, Render):
-            out=out.render
-        component=component.replace(x, out)
+        component="<body>\n"+compiler(tokens, variables).strip("\n")+"\n</body>"
+    toreplace={}
+    for x in variables:
+        if "{"+x+"}" in component:
+            id=uuid.uuid4().__str__()
+            print(variables[x])
+            toreplace[id]=variables[x]
+            component=component.replace("{"+x+"}", id)
+    for id in toreplace:
+        if type(toreplace[id])!=str:
+            if type(toreplace[id])==Render:
+                toreplace[id]=toreplace[id].render
+            else:
+                toreplace[id]=json.dumps(toreplace[id]())
+        component=component.replace(id, toreplace[id])
     return Render(component)
+
+def innertokeniser(code):
+    out=[]
+    buffer=""
+    instring=False
+    ascii="abcdefghijklmnopqrstuvwxyz"
+    ascii+=ascii.upper()+"1234567890_"
+    for x in code:
+        if not instring and x == "\"":
+            if buffer!="":
+                out.append({"type":"variable", "content":buffer})
+                buffer=""
+            instring=True
+            continue
+        if instring and x=="\"" and not buffer.endswith("\\"):
+            instring=False
+            out.append({"type":"string", "content":buffer})
+            buffer=""
+            continue
+        if not instring and x in " \n\t\r":
+            if buffer!="":
+                out.append({"type":"variable", "content":buffer})
+                buffer=""
+            continue
+        if not instring and x in "{}[]()-+<>=*^%!@~/":
+            if buffer!="":
+                out.append({"type":"variable", "content":buffer})
+                buffer=""
+            out.append({"type":"operator", "content":x})
+            continue
+        buffer+=x
+    if buffer!="":
+        out.append({"type":"variable", "content":buffer})
+    return out
 
 def tokeniser(code):
     out=[]
     i=-1
-    cache=""
-    in_string=False
-    string_quote=""
+    code_len=len(code)
+    rawtext=""
     while True:
         i+=1
-        if i>=len(code):
+        if i>=code_len:
             break
-        if len(out)>=3 and out[len(out)-3]["type"]=="operator" and out[len(out)-3]["value"]=="<" and out[len(out)-2]["type"]=="variable" and out[len(out)-2]["value"] in ["script", "style"] and out[len(out)-1]["type"]=="operator" and out[len(out)-1]["value"]==">":
-            tag=out[len(out)-2]["value"]
-            out=out[:len(out)-3]
-            inTag=""
-            j=i-1
-            while True:
-                j+=1
-                if j>=len(code):
-                    raise Exception("unexpected EOF while tokenising html file")
-                inTag+=code[j]
-                if "</"+tag+">" in inTag and inTag.count("</"+tag+">")==inTag.count("<"+tag+">")+1:
-                    inTag=inTag[:len(inTag)-len("</"+tag+">")]
-                    break
-            i=j
-            out.append({"type":tag, "value":inTag, "attributes":{}, "children":[]})
-            continue
-        if in_string:
-            if code[i]==string_quote:
-                out.append({"type":"string", "value":cache})
-                cache=""
-                in_string=False
-                continue
-            cache+=code[i]
-            continue
-        if code[i]=="\"":
-            in_string=True
-            string_quote="\""
-            continue
-        if code[i]=="<":
-            if cache!="":
-                out.append({"type":"variable", "value":cache})
-                cache=""
-            out.append({"type":"operator", "value":"<"})
-            continue
-        if code[i]==">":
-            if cache!="":
-                out.append({"type":"variable", "value":cache})
-                cache=""
-            out.append({"type":"operator", "value":">"})
-            continue
-        if code[i]=="=":
-            if cache!="":
-                out.append({"type":"variable", "value":cache})
-                cache=""
-            out.append({"type":"operator", "value":"="})
-            continue
-        if code[i]=="/":
-            if cache!="":
-                out.append({"type":"variable", "value":cache})
-                cache=""
-            out.append({"type":"operator", "value":"/"})
-            continue
-        if code[i]==" ":
-            if cache!="":
-                out.append({"type":"variable", "value":cache})
-                cache=""
-            continue
-        if code[i]=="{":
-            if cache!="":
-                out.append({"type":"variable", "value":cache})
-                cache=""
-            out.append({"type":"bracket", "value":"{"})
-            continue
-        if code[i]=="}":
-            if cache!="":
-                out.append({"type":"variable", "value":cache})
-                cache=""
-            out.append({"type":"bracket", "value":"}"})
-            continue
-        if code[i]=="\n":
-            continue
-        cache+=code[i]
-    if cache!="":
-        out.append({"type":"variable", "value":cache})
-    return out
-
-def parser(tokens):
-    out=[]
-    i=-1
-    while True:
-        i+=1
-        if i>=len(tokens):
-            break
-        if tokens[i]["type"]=="operator" and tokens[i]["value"]=="<" and len(tokens)-i>=7:
-            j=i
-            tagStart=[]
-            while True:
-                j+=1
-                if j>=len(tokens):
-                    raise Exception("unexpected EOF while parsing HTML file")
-                if tokens[j]["type"]=="operator" and tokens[j]["value"]==">":
-                    break
-                tagStart.append(tokens[j])
-            if len(tagStart)==0 or tagStart[0]["type"]!="variable":
-                raise Exception("tag starting expected a token of type variable")
-            i=j
-            tagEnd=[]
+        elif code[i]=="<":
+            if rawtext!="":
+                out.append({"type":"raw", "content":rawtext})
+                rawtext=""
+            buffer=""
             count=1
             while True:
-                j+=1
-                if j>=len(tokens):
-                    raise Exception("unexpected EOF while parsing HTML file")
-                tagEnd.append(tokens[j])
-                if len(tagEnd)>=4 and tagEnd[len(tagEnd)-4]["type"]=="operator" and tagEnd[len(tagEnd)-4]["value"]=="<" and tagEnd[len(tagEnd)-3]["type"]=="operator" and tagEnd[len(tagEnd)-3]["value"]=="/" and tagEnd[len(tagEnd)-2]==tagStart[0] and tagEnd[len(tagEnd)-1]["type"]=="operator" and tagEnd[len(tagEnd)-1]["value"]==">":
-                    count-=1
-                    if count==0:
-                        tagEnd=tagEnd[:len(tagEnd)-4]
-                        break
-                    continue
-                if len(tagEnd)>=2 and tagEnd[len(tagEnd)-2]["type"]=="operator" and tagEnd[len(tagEnd)-2]["value"]=="<" and tagEnd[len(tagEnd)-1]==tagStart[0]:
+                i+=1
+                if i>=code_len:
+                    raise EOFError
+                if code[i]=="<":
                     count+=1
-                    continue
-            i=j
-            tagName=tagStart[0]["value"]
-            tagStart=tagStart[1:]
-            attributes={}
-            index=-1
-            while True:
-                index+=1
-                if index>=len(tagStart):
+                if code[i]==">":
+                    count-=1
+                if count==0:
                     break
-                if len(tagStart)-index>=3 and tagStart[index]["type"]=="variable" and tagStart[index+1]["type"]=="operator" and tagStart[index+1]["value"]=="=":
-                    if tagStart[index+2]["type"]!="string":
-                        attributes[tagStart[index]["value"]]={"type":"signal", "value":tagStart[index+2]["value"]}
-                    else:
-                        attributes[tagStart[index]["value"]]={"type":"variable", "value":tagStart[index+2]["value"]}
-                    index+=2
+                buffer+=code[i]
+            args={}
+            tokens=innertokeniser(buffer)
+            name=tokens[0]["content"]
+            tokens=tokens[1:]
+            j=-1
+            tokens_len=len(tokens)
+            while True:
+                j+=1
+                if j>=tokens_len:
+                    break
+                if tokens_len-j>=3 and tokens[j]["type"]=="variable" and tokens[j+1]["type"]=="operator" and tokens[j+1]["content"]=="=" and tokens[j+2]["type"]=="string":
+                    args[tokens[j]["content"]]=tokens[j+2]["content"]
+                    j+=2
                     continue
-                attributes[tagStart[index]["value"]]={"type":tagStart[index]["type"], "value":"true"}
-            out.append({"type":"tag", "value":tagName, "children":parser(tagEnd), "attributes":attributes})
+                if tokens[j]["type"] in ["operator", "string"]:
+                    continue
+                if tokens[j]["type"]=="variable":
+                    args[tokens[j]["content"]]=True
+            buffer=""
+            count=1
+            while True:
+                i+=1
+                if i>=code_len:
+                    raise EOFError
+                buffer+=code[i]
+                if buffer.endswith("</"+name+">"):
+                    count-=1
+                if buffer.endswith("<"+name):
+                    count+=1
+                if count==0:
+                    break
+            buffer=buffer[:len(buffer)-len("</"+name+">")]
+            if name not in ["script", "js", "py"]:
+                children=tokeniser(buffer)
+            else:
+                children=buffer
+            out.append({"type":"tag", "tag":name, "args":args, "children":children})
+            buffer=""
             continue
-        out.append(tokens[i])
+        rawtext+=code[i]
+    if rawtext!="":
+        out.append({"type":"raw", "content":rawtext})
     return out
 
-def renderTokens(tokens, variables={"env":{}, "variables":{}}):
-    final=""
-    i=-1
-    while True:
-        i+=1
-        if i>=len(tokens):
-            break
-        if len(tokens)-i>=3 and tokens[i]["type"]=="bracket" and tokens[i]["value"]=="{" and (tokens[i+1]["type"]=="variable" or tokens[i+1]["type"]=="string") and tokens[i+2]["type"]=="bracket" and tokens[i+2]["value"]=="}":
-            if tokens[i+1]["type"]=="string":
-                final+="""
-                <script>
-                    (()=>{
-                        var element=document.createElement("span")
-                        var value=({toEvaluate})
-                        if (typeof value!="string") {
-                            value=JSON.stringify(value)
-                        }
-                        element.innerText=value
-                        document.currentScript.insertAdjacentElement("afterend", element)
-                    })()
-                </script>
-                """.replace("{toEvaluate}", tokens[i+1]["value"])
-            else:
-                if tokens[i+1]["value"] not in variables["env"] and tokens[i+1]["value"] not in variables["variables"]:
-                    final+="""
-                    <script>
-                        (()=>{
-                            var signal=GetSignal("{id}")
-                            var element=document.createElement("span")
-                            if (signal===undefined) {
-                                var value=eval("{id}")
-                            } else {
-                                var value=signal.Value()
-                            }
-                            if (typeof value!="string") {
-                                value=JSON.stringify(value)
-                            }
-                            element.innerText=value
-                            document.currentScript.insertAdjacentElement("afterend", element)
-                            OnChange("{id}", ()=>{
-                                var newElement=document.createElement("span")
-                                if (signal===undefined) {
-                                    var value=eval("{id}")
-                                } else {
-                                    var value=signal.Value()
-                                }
-                                if (typeof value!="string") {
-                                    value=JSON.stringify(value)
-                                }
-                                newElement.innerText=value
-                                element.replaceWith(newElement)
-                                element=newElement
-                            })
-                        })()
-                    </script>
-                    """.replace("{id}", tokens[i+1]["value"])
-                else:
-                    if tokens[i+1]["value"] in variables["variables"]:
-                        value=variables["variables"][tokens[i+1]["value"]]
-                        if isinstance(value, Render):
-                            value=value.render
-                        final+=value+"\n\n"
-                    if tokens[i+1]["value"] in variables["env"]:
-                        value=variables["env"][tokens[i+1]["value"]]
-                        if isinstance(value, Render):
-                            value=value.render
-                        final+=value+"\n\n"
-            i+=2
+def compiler(tokens, variables={}):
+    out=""
+    for token in tokens:
+        if token["type"]=="raw":
+            token["content"]=token["content"].strip(" \t\n\r")
+            if token["content"]=="":
+                continue
+            if token["content"][0]=="{" and token["content"][-1]=="}" and token["content"][1:-1] in variables:
+                out+=token["content"]
+                continue
+            out+=f"""
+<script>
+(()=>{{
+    const div=document.currentScript
+    div.insertAdjacentText("afterend", "{escapeString(token["content"])}");
+    const textNode = document.currentScript.nextSibling
+    try {{
+        AddNode(document.currentScript, document.currentScript.getAttribute("nodeTracker"))
+        AddNode(textNode, document.currentScript.getAttribute("nodeTracker"))
+    }} catch {{}}
+}})()
+</script>
+"""
             continue
-        if tokens[i]["type"]=="tag" and tokens[i]["value"] not in ["if", "for", "signal"]:
-            tag=tokens[i]
-            final+="\n<"+tokens[i]["value"]
+        if token["type"]=="tag" and token["tag"] not in ["js", "signal", "if", "for", "py"]:
             script=""
-            if len(tag["attributes"])!=0:
-                for attribute in tag["attributes"]:
-                    if tag["attributes"][attribute]["type"] in ["variable", "signal"]:
-                        attributeValue="\""
-                        signals=[]
-                        cache=""
-                        inSignal=False
-                        random_uuid=uuid.uuid4().__str__()
-                        for x in tag["attributes"][attribute]["value"]:
-                            if x=="{":
-                                if not inSignal:
-                                    inSignal=True
-                                    continue
-                            if x=="}":
-                                if inSignal:
-                                    inSignal=False
-                                    attributeValue+="\"+"+random_uuid+"+\""
-                                    signals.append(cache)
-                                    cache=""
-                                    continue
-                            if inSignal:
-                                cache+=x
-                            else:
-                                attributeValue+=x
-                        attributeValue+="\""
-                        if len(signals)==0:
-                            final+=" "+attribute+"="+attributeValue
-                            continue
-                        for x in signals:
-                            doublequotes="\""
-                            if x in variables["variables"]:
-                                script+=f"""
-                                parentElement.setAttribute(\"{attribute}\", {attributeValue.replace(random_uuid, f"String({x})")})
-                                """
-                            else:
-                                script+=f"""
-                                if (GetSignal("{x}")!==undefined) {{
-                                    parentElement.setAttribute({doublequotes+attribute+doublequotes}, {attributeValue.replace(random_uuid, f"GetSignal({doublequotes+x+doublequotes}).Value()")})
-                                }} else {{
-                                    parentElement.setAttribute({doublequotes+attribute+doublequotes}, {attributeValue.replace(random_uuid, f"String({x})")})
-                                }}
-                                var signals={json.dumps(signals)}
-                                for (var signal in signals) {{
-                                    if (GetSignal(signals[signal])!==undefined) {{
-                                        OnChange(signals[signal], ()=>{{
-                                            if (GetSignal("{x}")!==undefined) {{
-                                                parentElement.setAttribute({doublequotes+attribute+doublequotes}, {attributeValue.replace(random_uuid, f"GetSignal({doublequotes+x+doublequotes}).Value()")})
-                                            }} else {{
-                                                parentElement.setAttribute({doublequotes+attribute+doublequotes}, {attributeValue.replace(random_uuid, f"String({x})")})
-                                            }}
-                                        }})
+            rendered_attributes=[]
+            for attribute in token["args"]:
+                if token["args"][attribute]!=True and "<js" in token["args"][attribute]:
+                    to_render={}
+                    raw_attributes=""
+                    code=token["args"][attribute]
+                    buffer=""
+                    i=-1
+                    code_len=len(code)
+                    signals=[]
+                    while True:
+                        i+=1
+                        if i>=code_len:
+                            break
+                        buffer+=code[i]
+                        if buffer.endswith("<js"):
+                            if len(buffer)>3:
+                                raw_attributes+=buffer[:len(buffer)-3]
+                            buffer=""
+                            signals_string=""
+                            while True:
+                                i+=1
+                                if i>=code_len:
+                                    raise EOFError
+                                signals_string+=code[i]
+                                if signals_string.endswith(">"):
+                                    signals_string=signals_string[:len(signals_string)-1]
+                                    break
+                            signals_string=signals_string.strip(" \r").replace("\t", " ")
+                            code_buffer=""
+                            while True:
+                                i+=1
+                                if i>=code_len:
+                                    raise EOFError
+                                code_buffer+=code[i]
+                                if "</js>" in code_buffer:
+                                    code_buffer=code_buffer[:len(code_buffer)-5]
+                                    break
+                            while "  " in signals_string:
+                                signals_string=signals_string.replace("  ", " ")
+                            signals+=signals_string.split() 
+                            id=uuid.uuid4().__str__()
+                            raw_attributes+=id
+                            to_render[id]=f"""
+                            callbacks.push(()=>{{
+                                try {{
+                                    var result=eval("{escapeString(code_buffer)}")
+                                    if (result) {{
+                                        return ["{id}", result]
                                     }}
+                                }} catch {{}}
+                                function _() {{
+                                    {code_buffer}
                                 }}
-                                """
-            final+=">"+"\n"+renderTokens(tag["children"], variables=variables)+"\n"
-            final+="</"+tag["value"]+">"
-            if script!="":
-                script="var parentElement=document.currentScript.previousElementSibling\n"+script
-                final+="\n<script>"+"(()=>{\n"+script+"\n"+"})()"+"</script>"
-            continue
-        if tokens[i]["type"]=="tag" and tokens[i]["value"]=="if":
-            attributes=[]
-            for x in tokens[i]["attributes"]:
-                if tokens[i]["attributes"][x]["value"]!="true":
-                    attributes.append(x)
-            attributesValue=""
-            for x in tokens[i]["attributes"]:
-                if x in attributes:
-                    attributesValue+="element.setAttribute(\""+x+"\", \""+tokens[i]["attributes"][x]["value"]+"\")\n"
-            if attributesValue!="":
-                attributesValue="((element)=>{"+attributesValue+"})"
-            else:
-                attributesValue="(()=>{})"
-            script="\n<div></div>\n"+f"""<script>\n(()=>{{
-                function executeScripts(element) {{
-                    element.querySelectorAll("script").forEach(script => {{
-                        const newScript = document.createElement("script")
-                        if (script.src) {{
-                            newScript.src = script.src
-                        }} else {{
-                            newScript.textContent = script.textContent
-                        }}
-                        script.parentNode.replaceChild(newScript, script)
-                    }})
-                }}
-                var parentElement=document.currentScript.previousElementSibling
-                var encodedElement=`{{encodedElement}}`
-                var element=document.createElement("div");
-                {attributesValue}(parentElement)
-                var onDom={{condition}}
-                if ({{condition}}) {{
-                    element.innerHTML=encodedElement;
-                    {attributesValue}(element)
-                    parentElement.replaceWith(element)
-                    parentElement=element
-                    executeScripts(parentElement)
-                }}
-            """.replace("{encodedElement}", escapeString(renderTokens(tokens[i]["children"], variables)))
-            condition=""
-            random_uuid=uuid.uuid4().__str__()
-            ifscript="""
-                    OnChange(\"{attribute}\", ()=>{
-                                if ({random_uuid}) {
-                                    if (onDom) {
-                                        return
-                                    }
-                                    onDom=true
-                                    element=document.createElement("div");"""+f"{attributesValue}(element)"+"""
-                                    element.innerHTML=encodedElement
-                                    parentElement.replaceWith(element)
-                                    parentElement=element
-                                    executeScripts(parentElement)
-                                } else {
-                                    try {
-                                        if (!onDom) {
-                                            return
-                                        }
-                                        element=document.createElement("div");"""+f"{attributesValue}(element)"+"""
-                                        parentElement.replaceWith(element)
-                                        parentElement=element
-                                        onDom=false
-                                    } catch (e) {
-                                        console.log(e)
-                                    }
-                                }
-                    })
-                    """
-            for attribute in tokens[i]["attributes"]:
-                if attribute in attributes:
-                    continue
-                if tokens[i]["attributes"][attribute]["type"]!="string":
-                    if attribute.startswith("dep:"):
-                        for attribute in attribute[4:].split(":"):
-                            script+=ifscript.replace("{random_uuid}", random_uuid).replace("{attribute}", attribute)
-                    else:
-                        condition+=f"GetSignal(\"{attribute}\").Value() && "
-                        script+=ifscript.replace("{random_uuid}", random_uuid).replace("{attribute}", attribute)
-                else:
-                    condition+="("+attribute+") && "
-            script=script.replace("{condition}", condition+"true")
-            script=script.replace(random_uuid, condition+"true")
-            script+="})()"+"\n</script>"
-            final+=script
-            continue
-        if tokens[i]["type"]=="tag" and tokens[i]["value"]=="for":
-            IndexUUID=uuid.uuid4().__str__()
-            ElementUUID=uuid.uuid4().__str__()
-            if len(tokens[i]["attributes"])>2 and list(tokens[i]["attributes"])[1]=="in":
-                arrayIndex=2
-                newVariables=variables
-                newVariables["variables"][list(tokens[i]["attributes"])[0]]=IndexUUID
-                encodedHTML=escapeString(renderTokens(tokens[i]["children"], newVariables))
-                indexVariable=list(tokens[i]["attributes"].keys())[0]
-                elementVariable=""
-                attributes=list(tokens[i]["attributes"])[3:]
-            if len(tokens[i]["attributes"])>4 and list(tokens[i]["attributes"])[1]=="and":
-                arrayIndex=4
-                newVariables=variables
-                newVariables["variables"][list(tokens[i]["attributes"])[0]]=IndexUUID
-                newVariables["variables"][list(tokens[i]["attributes"])[2]]=ElementUUID
-                encodedHTML=escapeString(renderTokens(tokens[i]["children"], newVariables))
-                indexVariable=list(tokens[i]["attributes"].keys())[0]
-                elementVariable=list(tokens[i]["attributes"].keys())[2]
-                attributes=list(tokens[i]["attributes"])[5:]
-            attributesValue=""
-            for x in tokens[i]["attributes"]:
-                if x in attributes:
-                    attributesValue+="element.setAttribute(\""+x+"\", \""+tokens[i]["attributes"][x]["value"]+"\")\n"
-            if attributesValue!="":
-                attributesValue="((element)=>{"+attributesValue+"})"
-            else:
-                attributesValue="(()=>{})"
-            variableDefinition=f"`+`var {indexVariable}=`+String(i)+`"
-            if elementVariable!="":
-                variableDefinition+=f"; var {elementVariable}=`+JSON.stringify(array[i])+`"
-            script=f"""
-                var originalArray=array
-                var signal=false
-                if (GetSignal(array)!==undefined) {{
-                    var array=GetSignal(array).Value()
-                    signal=true
-                }} else {{
-                    var array=eval(array)
-                }}
-                var element=document.createElement("div");
-                {attributesValue}(element)
-                var innerHTML=""
-                var encodedHTML=`{encodedHTML}`
-                for (var i=0; i<array.length; i++) {{
-                    var arrayElement=array[i]
-                    if (typeof arrayElement!=="string") {{
-                        arrayElement=JSON.stringify(arrayElement)
-                    }}
-                    innerHTML+=`<script`+`>{variableDefinition}<`+`/script>`+encodedHTML.replaceAll("{ElementUUID}", arrayElement).replaceAll("{IndexUUID}", String(i))
-                }}
-                element.innerHTML=innerHTML
-                document.currentScript.insertAdjacentElement("afterend", element)
-                function executeScripts(element) {{
-                    element.querySelectorAll("script").forEach(script => {{
-                        const newScript = document.createElement("script")
-                        if (script.src) {{
-                            newScript.src = script.src
-                        }} else {{
-                            newScript.textContent = script.textContent
-                        }}
-                        script.parentNode.replaceChild(newScript, script)
-                    }})
-                }}
-                executeScripts(element)
-                if (signal) {{
-                    OnChange(originalArray, ()=>{{
-                        var array=GetSignal(originalArray).Value()
-                        var newElement=document.createElement("div");
-                        {attributesValue}(newElement)
-                        var innerHTML=""
-                        for (var i=0; i<array.length; i++) {{
-                            var arrayElement=array[i]
-                            if (typeof arrayElement!=="string") {{
-                                arrayElement=JSON.stringify(arrayElement)
-                            }}
-                            innerHTML+=`<script`+`>{variableDefinition}<`+`/script>`+encodedHTML.replaceAll("{ElementUUID}", arrayElement).replaceAll("{IndexUUID}", String(i))
-                        }}
-                        newElement.innerHTML=innerHTML
-                        element.replaceWith(newElement)
-                        element=newElement
-                        function executeScripts(element) {{
-                            element.querySelectorAll("script").forEach(script => {{
-                                const newScript = document.createElement("script")
-                                if (script.src) {{
-                                    newScript.src = script.src
-                                }} else {{
-                                    newScript.textContent = script.textContent
-                                }}
-                                script.parentNode.replaceChild(newScript, script)
+                                return ["{id}", _()]
                             }})
-                        }}
-                        executeScripts(element)
-                    }})
-                }}
-            """
-            final+=f"""\n<script>\n((array)=>{{{script}}})(\"{list(tokens[i]["attributes"].keys())[arrayIndex]}\")\n</script>\n"""
-            continue
-        if tokens[i]["type"]=="tag" and tokens[i]["value"]=="signal":
-            randomUUID=uuid.uuid4().__str__()
-            script="""
-                var element=document.createElement("div");
-                {randomUUID}(element)
-                var evaluatedHTML=`{encodedHTML}`
-                element.innerHTML=evaluatedHTML
-                document.currentScript.insertAdjacentElement("afterend", element)
-                function executeScripts(element) {
-                    element.querySelectorAll("script").forEach(script => {
-                        const newScript = document.createElement("script")
-                        if (script.src) {
-                            newScript.src = script.src
-                        } else {
-                            newScript.textContent = script.textContent
-                        }
-                        script.parentNode.replaceChild(newScript, script)
-                    })
-                }
-                executeScripts(element)
-            """.replace("{encodedHTML}", escapeString(renderTokens(tokens[i]["children"], variables))).replace("{randomUUID}", randomUUID)
-            attributesValue=""
-            for attribute in tokens[i]["attributes"]:
-                if tokens[i]["attributes"][attribute]["value"]!="true":
-                    attributesValue+="element.setAttribute(\""+attribute+"\", \""+tokens[i]["attributes"][attribute]["value"]+"\")\n"
-                else:
+                            """
+                            continue
+                    if buffer!="":
+                        raw_attributes+=buffer
                     script+=f"""
-                        OnChange("{attribute}", ()=>{{
-                            var newElement=document.createElement("div")
-                            newElement.innerHTML=evaluatedHTML;
-                            {randomUUID}(newElement)
-                            element.replaceWith(newElement)
-                            element=newElement
-                            executeScripts(element)
-                        }})
-                    """
-            if attributesValue!="":
-                attributesValue="((element)=>{"+attributesValue+"})"
+                        (()=>{{
+                            var parentElement=document.currentScript.parentElement
+                            var callbacks=[];
+                            var signals={json.dumps(signals)};
+                            var render=()=>{{
+                                    var out="{raw_attributes}";
+                                    callbacks.forEach((y)=>{{
+                                        try {{
+                                            var res=y();
+                                            out=out.replace(res[0], String(res[1]));
+                                        }} catch (e) {{
+                                            console.error(e)
+                                        }}
+                                    }})
+                                    parentElement.setAttribute("{attribute}", out)
+                                }}
+                            signals.forEach((x)=>{{
+                                OnChange(x, render)
+                            }});
+                            {chr(10).join([to_render[z] for z in to_render])}
+                            render();
+                        }})();
+                        """
+                else:
+                    if token["args"][attribute]==True:
+                        rendered_attributes.append(attribute)
+                    else:
+                        rendered_attributes.append(attribute+"="+"\""+token["args"][attribute]+"\"")
+            rendered_attributes=" ".join(rendered_attributes)
+            if len(rendered_attributes)!=0:
+                rendered_attributes=" "+rendered_attributes.strip()
+            if token["tag"]=="script":
+                child_render=token["children"]
             else:
-                attributesValue="(()=>{})"
-            script=script.replace(randomUUID, attributesValue)
-            final+=f"""
+                child_render=compiler(token["children"], variables)
+            if script!="":
+                child_render="<script>\n"+script+"</script>\n"+child_render
+            out+="<"+token["tag"]+rendered_attributes+">\n"+child_render.strip(" \n")+"\n</"+token["tag"]+">"
+            continue
+        if token["type"]=="tag" and token["tag"]=="py":
+            try:
+                result=eval(token["children"], variables, variables)
+                if type(result)!=str:
+                    result=json.dumps(result)
+                out+=result
+            except:
+                exec("result=None", variables, variables)
+                base="\n".join([" "+x for x in token["children"].split("\n")])
+                if base!="":
+                    to_evaluate="def _():\n"+base+"\nresult=_()"
+                exec(to_evaluate, variables, variables)
+                if type(variables["result"])!=str:
+                    variables["result"]=json.dumps(variables["result"])
+                out+=variables["result"]
+            continue
+        if token["type"]=="tag" and token["tag"]=="js":
+            out+=f"""
             <script>
                 (()=>{{
-                    {script}
+                    document.currentScript.insertAdjacentText("afterend", "")
+                    var textNode=document.currentScript.nextSibling
+                    try {{
+                        var id=document.currentScript.getAttribute("nodeTracker")
+                        AddNode(textNode, document.currentScript.getAttribute("nodeTracker"))
+                    }} catch {{}}
+                    function Render() {{
+                        function _() {{
+                            try {{
+                                var result=eval("{escapeString(token["children"])}")
+                                if (result !== undefined) {{
+                                    return result
+                                }}
+                            }} catch {{}}
+                            {token["children"]}
+                        }}
+                        var renderedText=_()
+                        if (renderedText==undefined) {{
+                            renderedText=""
+                        }}
+                        var renderedNode=document.createTextNode(String(renderedText))
+                        try {{
+                            AddNode(renderedNode, id)
+                        }} catch {{}}
+                        textNode.replaceWith(renderedNode)
+                        textNode.remove()
+                        textNode=renderedNode
+                    }}
+                    ({json.dumps([x for x in token["args"]])}).forEach((x)=>{{
+                        OnChange(x, Render)
+                    }})
+                    Render()
                 }})()
             </script>
             """
+        if token["type"]=="tag" and token["tag"]=="signal":
+            token["tag"]="if"
+            token["args"]["condition"]="true"
+        if token["type"]=="tag" and token["tag"]=="if":
+            condition="true"
+            condition_signals=[x for x in token["args"] if x!="condition"]
+            if "condition" in token["args"]:
+                condition=token["args"]["condition"]
+            else:
+                for x in token["args"]:
+                    condition+=f""" && GetSignal("{x}").Value()"""
+            out+="""
+            <script>
+            (()=>{
+                var id=null;
+                try {
+                    id=document.currentScript.getAttribute("nodeTracker")
+                    AddNode(document.currentScript, id)
+                }  catch {}
+                var self=document.currentScript
+                var parentElement=document.currentScript.parentElement
+                var html=`{html}`
+                var lastUUID=null;
+                function Remove() {
+                    if (lastUUID!==null) {
+                        RemoveNode(lastUUID)
+                    }
+                }
+                function Render(html) {
+                    var element=document.createElement("div")
+                    try {
+                        Remove()
+                    } catch {}
+                    if (id!==null && nodes[id]==undefined) {
+                        throw ""
+                    }
+                    element.innerHTML=html
+                    lastUUID=crypto.randomUUID();
+                    nodes[lastUUID]=[];
+                    if (id!==null) {
+                        AddParent(lastUUID, id)
+                    }
+                    Array.from(element.children).reverse().forEach((x)=>{
+                        if (x.tagName=="SCRIPT") {
+                            const newScript = document.createElement("script")
+                            newScript.setAttribute("nodeTracker", lastUUID)
+                            if (x.src) {
+                                newScript.src = x.src
+                            } else {
+                                newScript.textContent = x.textContent
+                            }
+                            x.parentNode.replaceChild(newScript, x)
+                            x=newScript
+                        } else {
+                            executeScripts(x)
+                        }
+                        try {
+                            nodes[document.currentScript.getAttribute("nodeTracker")].push(x)
+                        } catch {}
+                        AddNode(x, lastUUID)
+                        self.insertAdjacentElement("afterend", x)
+                    })
+                }
+                if ({condition}) {
+                    Render(html)
+                }
+                ({condition_signals}).forEach((x)=>{
+                    OnChange(x, ()=>{
+                        if ({condition}) {
+                            Render(html)
+                        } else {
+                            try {
+                                Remove()
+                            } catch {}
+                        }
+                    })
+                })
+            })()
+            </script>
+            """.replace("{signals}", json.dumps([x for x in token["args"]])).replace("{html}", escapeString(compiler(token["children"], variables))).replace("{condition_signals}", json.dumps(condition_signals)).replace("{condition}", condition)
             continue
-        if tokens[i]["type"] in ["script", "style"]:
-            tag=tokens[i]["type"]
-            final+="\n<"+tag+">\n"+tokens[i]["value"]+"\n</"+tag+">"
-            continue
-        final+="\n"+tokens[i]["value"]+"\n"
-    return final
+    return out
