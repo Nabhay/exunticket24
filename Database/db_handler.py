@@ -6,8 +6,9 @@ app = Flask("__init__")
 
 channels = litedb.get_conn("channels")
 user_access = litedb.get_conn("user_access")
+announcements = litedb.get_conn("announcements")
 
-conn_table = {"channels": channels, "user_access": user_access}
+conn_table = {"channels": channels, "user_access": user_access, "announcements": announcements}
 
 @app.get("/get")
 def get_api():
