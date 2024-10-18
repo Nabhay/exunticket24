@@ -3,38 +3,18 @@ from monster import render, Flask, escapeString
 import sys, json
 import hashlib, base64
 import secret_parser
-import requests
-
-#from docs import process_docs_in_folder
-#import resend
+import requests, hashlib
+from docs import process_docs_in_folder
+import resend
 
 app = Flask(__name__)
 
-def make_response(data, mimetype=None, status=None):
-    if type(data) in [str, int, float, bool, list, dict]:
-        data = json.dumps(data)
-    resp = Response(data, mimetype=mimetype, status=status)
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    return resp
 
-#resend.api_key = secret_parser.parse("variables.txt")["RESEND"]
+resend.api_key = secret_parser.parse("variables.txt")["RESEND"]
 salt = secret_parser.parse("variables.txt")["SALT"]
 db_ip =  secret_parser.parse("variables.txt")["DB_IP"]
 
-'''
-def send_mail(to, subject, html, reply_to="exun@dpsrkp.net"):
-    params = {
-        "from": "Exun Clan <exun@exun.co>",
-        "to": [to],
-        "subject": subject,
-        "html": html,
-        "reply_to": reply_to
-    }
-    email = resend.Emails.send(params)
-    return email
 
-send_mail("nabhay.khanna@gmail.com", "test", "<div>hi</div>")
-'''
 daisyui = "<script>"+ open("public/pako.js").read()+ "</script>"+ """<script>
     function decompressGzippedString(base64String) {
         try {
@@ -61,14 +41,6 @@ daisyui = "<script>"+ open("public/pako.js").read()+ "</script>"+ """<script>
 
 tailwind = "<script>eval(atob(`" + base64.b64encode(open("public/tailwind.js").read().encode()).decode() + "`))</script>"
 
-def otp(a):
-    if type(a) == str:
-        a = a.encode()+salt.encode()
-    hash_object = hashlib.sha256(a)
-    hex_dig = hash_object.hexdigest()
-    array = int(hex_dig[-6:], 16) % (10 ** 6)
-    return [int(digit) for digit in str(array)]
-
 @app.get("/")
 def home():
     chat_window = open('components/chat_window.html').read()
@@ -76,27 +48,92 @@ def home():
     channels = open('components/channels.html').read()
     return render("index", locals() | globals())
 
-@app.get("/login")
-def login():
-    return render("login", locals() | globals())
+@app.get('/get_sum')
+def get_sum():
+    try:
+        user = request.args.get('email')
+        if not user:
+            return json.dumps({"error": "Email parameter is required."}), 400
+        user_access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
+        if user_access_response.status_code != 200:
+            return json.dumps({"error": "Failed to fetch user access."}), 500
+        user_access = json.loads(user_access_response.text)
 
-'''
-@app.get("/email")
-def email_send():
-    args=dict(request.args)
-    key="".join([str(x) for x in otp(args["email"])])
-    otp_render=open("components/mail/mail.html").read()
-    for x in range(0, 6):
-        otp_render=otp_render.replace(f"{{digit{x+1}}}", key[x])
-    send_mail(args["email"], "Exun Registration Authentication OTP - "+key, otp_render)
-    return make_response(key)'''
+        channels_response = requests.get(f'{db_ip}/get_all', params={'table': 'channels'})
+        if channels_response.status_code != 200:
+            return json.dumps({"error": "Failed to fetch channels."}), 500
+        channels = json.loads(channels_response.text)
+
+        channels_hash = {}
+        for channel_id, channel_data in channels.items():
+            try:
+                channel_info = json.loads(channel_data)
+                if channel_id in user_access or channel_info['type'] == 'announcements':
+                    channels_hash[channel_info['name']] = hashlib.sha256(channel_data.encode('utf-8')).hexdigest()
+            except json.JSONDecodeError:
+                print(f"Error decoding JSON for channel data: {channel_data}")
+                continue
+
+        return json.dumps(channels_hash), 200
+    
+    except Exception as e:
+        print(f"Error in get_sum: {e}")
+        return json.dumps({"error": str(e)}), 500
+
 
 @app.get('/get_chats')
 def get_chats():
-    client_get_sum = json.loads(request.headers.get('client_get_sum'))
+    try:
+        user = request.args.get('email')
+        if not user:
+            return json.dumps({"error": "Email parameter is required."}), 400
+        
+        channel_ids = request.args.getlist('channel_ids')
+        
+        user_access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
+        if user_access_response.status_code != 200:
+            return json.dumps({"error": "Failed to fetch user access."}), 500
+        user_access = json.loads(user_access_response.text)
+        
+        channels_response = requests.get(f'{db_ip}/get_all', params={'table': 'channels'})
+        if channels_response.status_code != 200:
+            return json.dumps({"error": "Failed to fetch channels."}), 500
+        channels = json.loads(channels_response.text)
 
-def check_sum(client, db):
-    for i in client:
-        if i[1] != hashlib.update(requests.request(db_ip+f"/get/?table=channels&key={i[0]}")):
-            return requests.request(db_ip+'/get')
+        user_channels = {}
+        for channel_id, channel_data in channels.items():
+            try:
+                channel_info = json.loads(channel_data)
+                if (channel_id in user_access or channel_info['type'] == 'announcements') and channel_id in channel_ids:
+                    user_channels[channel_info['name']] = channel_data
+            except json.JSONDecodeError:
+                print(f"Error decoding JSON for channel data: {channel_data}")
+                continue
+
+        return json.dumps(user_channels), 200
+    
+    except Exception as e:
+        print(f"Error in get_chats: {e}")
+        return json.dumps({"error": str(e)}), 500
+@app.get('/send_message')
+def send_message_user():
+    user = request.args.get('email')
+    message = request.args.get('channel')
+    channel_id = request.args.get('channel')
+    requests.get(f'{db_ip}/', params={'channel':channel_id, 'message': message, })
+    '''
+@app.get('/send_message')
+def send_message_api():
+    channel = request.args.get('channel')
+    message = request.args.get('message')
+    user = request.args.get('user')
+
+    try:
+        result = asyncio.run(send_message(channel_id=int(channel), user_message=message, identifier=user))
+        return jsonify(result), 200 if 'success' in result else 400
+    except Exception as e:
+        print(f"Error sending user message via HTTP: {e}")
+        return jsonify({"error": str(e)}), 500
+
+    '''
 app.run(host="127.0.0.1", port=int(sys.argv[1]))
