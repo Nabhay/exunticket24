@@ -5,7 +5,7 @@ class Connection:
         self.collection = collection
     
     def set(self, key, value):
-        set(self.collection, key, json.dumps(value))
+        set(self.collection, key, value)
 
     def insert(self, key=None, record=None):
         if record==None:

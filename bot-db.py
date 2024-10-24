@@ -5,64 +5,34 @@ from quart import Quart, request, jsonify
 import litedb
 import json
 import asyncio
-from typing import Dict, Union
-import threading
 import traceback
+from typing import Dict, Union
 
+# 1. Load secrets and initialize global constants
 secrets = secret_parser.parse('variables.txt')
-
 discord_bot = secrets["discord"]
 guild_id = secrets["guild"]
 
+# 2. Set up database connections
 channels = litedb.get_conn("channels")
 user_access = litedb.get_conn("user_access")
-
 conn_table = {"channels": channels, "user_access": user_access}
 
+# 3. Initialize Quart app
 app = Quart(__name__)
 
+# 4. Setup Discord bot
 intents = discord.Intents.default()
 intents.messages = True
 intents.message_content = True
 intents.guilds = True
 intents.members = True
-
 bot = commands.Bot(command_prefix='/', intents=intents)
 
+# 5. Bot Events
 @bot.event
 async def on_ready():
     print("Bot Started")
-
-async def create_channels(name: str, category: str, user):
-    try:
-        guild = bot.get_guild(guild_id)
-        category_channel = discord.utils.get(guild.categories, name=category)
-
-        if category_channel is None:
-            return {"error": f"Category '{category}' not found."}
-
-        channel = await guild.create_text_channel(name, category=category_channel)
-
-        if category == "announcements":
-            struct = {'messages': [], 'type': 'announcements', 'name': name, 'AI_enabled': 'false'}
-            conn_table['channels'].set(channel.id, json.dumps(struct))
-
-        elif category == "restricted-announcements":
-            struct = {'messages': [], 'type': 'restricted-announcements', 'name': name, 'AI_enabled': 'false'}
-            conn_table['channels'].set(channel.id, json.dumps(struct))
-
-        elif category == "chat":
-            user_access_data = json.loads(conn_table['user_access'].get(user))
-            user_access_data.append(channel.id)
-            conn_table['user_access'].set(user, json.dumps(user_access_data))
-            struct = {'messages': [], 'type': 'chat', 'name': name, 'AI_enabled': 'true'}
-            conn_table['channels'].set(channel.id, json.dumps(struct))
-
-        return {"success": True, "channel_id": channel.id}
-
-    except Exception as e:
-        print(f"Error creating channels: {e}")
-        return {"error": str(e)}
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -70,12 +40,12 @@ async def on_message(message: discord.Message):
         return
 
     await bot.process_commands(message)
-
+    
     try:
         if message.channel.category.name in ["announcements", "restricted-announcements"] or \
                 (message.channel.category and message.channel.category.name == "chat" and
                  (await message.channel.fetch_message(message.reference.message_id)).author == message.guild.me if message.reference else False):
-            channels = json.loads(json.loads(conn_table['channels'].get(str(message.channel.id))))
+            channels = json.loads(conn_table['channels'].get(str(message.channel.id)))
             channels["messages"].append({'role': 'Exunite', 'message': message.content, 'time': message.created_at.timestamp(), 'message_id': message.id})
             conn_table['channels'].set(message.channel.id, json.dumps(channels))
 
@@ -89,7 +59,7 @@ async def on_message_edit(before, after):
         return
 
     try:
-        if before.channel.category and before.channel.category.name in ["restricted-announcements","announcements", "chat"]:
+        if before.channel.category and before.channel.category.name in ["restricted-announcements", "announcements", "chat"]:
             channels = json.loads(conn_table['channels'].get(before.channel.id))
             for i in range(len(channels['messages'])):
                 if channels['messages'][i]['message_id'] == before.id:
@@ -113,19 +83,44 @@ async def on_message_delete(message: discord.Message):
     except Exception as e:
         print(f"Error handling message delete: {e}")
 
+async def create_channels(name: str, category: str, user):
+    try:
+        guild = bot.get_guild(guild_id)
+        category_channel = discord.utils.get(guild.categories, name=category)
+
+        if category_channel is None:
+            return {"error": f"Category '{category}' not found."}
+
+        channel = await guild.create_text_channel(name, category=category_channel)
+
+        struct = {'messages': [], 'type': category, 'name': name, 'AI_enabled': 'false'}
+        if category == "chat":
+            user_access_data = json.loads(conn_table['user_access'].get(user))
+            user_access_data.append(channel.id)
+            conn_table['user_access'].set(user, json.dumps(user_access_data))
+            struct['AI_enabled'] = 'true'
+
+        conn_table['channels'].set(channel.id, json.dumps(struct))
+        return {"success": True, "channel_id": channel.id}
+
+    except Exception as e:
+        print(f"Error creating channels: {e}")
+        return {"error": str(e)}
+
 async def send_message(user_message, identifier, channel_id):
     try:
         channel = bot.get_channel(channel_id)
+        channels = json.loads(conn_table['channels'].get(channel_id))
         message = await channel.send(f'`{identifier}: {user_message}`')
-        channels = json.loads(json.loads(conn_table['channels'].get(message.channel.id)))
         channels["messages"].append({'role': identifier, 'message': user_message, 'time': message.created_at.timestamp(), 'message_id': message.id})
-        conn_table['channels'].set(message.channel.id, json.dumps(channels))
+        conn_table['channels'].set(channel_id, json.dumps(channels))
         return {"success": True}
 
     except Exception as e:
         print(f"Error sending user message: {e}")
         return {"error": str(e)}
 
+# 7. API Endpoints
 @app.route("/get", methods=["GET"])
 async def get_api():
     table = request.args.get("table")
@@ -181,7 +176,7 @@ def toggle_ai_api():
     channel = request.args.get('channel', "")
     toggle = request.args.get('toggle', "")
 
-    if not channel.isdigit() or toggle not in ["true", "false"] :
+    if not channel.isdigit() or toggle not in ["true", "false"]:
         return jsonify({"error": "Invalid parameters"}), 400
 
     enable = toggle == "true"
@@ -206,7 +201,7 @@ def toggle_ai(channel: int, enable: bool) -> Dict[str, Union[bool, str]]:
 async def create_restricted_channel(channel: str, allowed: list) -> Dict[str, any]:
     try:
         for user_id in allowed:
-            response = await create_channels(name=channel, category="restricted-announcements")
+            response = await create_channels(name=channel, category="restricted-announcements", user=None)
             
             if response.get("success"):
                 channel_id = response["channel_id"]
@@ -226,6 +221,7 @@ async def create_restricted_channel(channel: str, allowed: list) -> Dict[str, an
         print(f"Error creating restricted channel: {e}")
         return {"error": str(e)}
 
+# 8. Bot Commands
 @bot.command(name='create_restricted')
 async def create_restricted(ctx, channel: str, *allowed_users: str):
     result = await create_restricted_channel(channel, list(allowed_users))
@@ -234,6 +230,27 @@ async def create_restricted(ctx, channel: str, *allowed_users: str):
     else:
         await ctx.send(f"Error: {result.get('error')}")
 
+@bot.command(name='create_announcements')
+async def create_announcements_command(ctx, channel: str):
+    result = await create_announcements(channel)
+    if result.get("success"):
+        await ctx.send(result["message"])
+    else:
+        await ctx.send(f"Error: {result.get('error')}")
+
+async def create_announcements(channel: str) -> Dict[str, any]:
+    try:
+        response = await create_channels(name=channel, category="announcements", user=None)  # Adjust user as necessary
+        if response.get("success"):
+            return {"success": True, "message": f"Announcement channel '{channel}' created."}
+        else:
+            return {"error": response.get("error")}
+    
+    except Exception as e:
+        print(f"Error creating announcement channel: {e}")
+        return {"error": str(e)}
+
+# 9. Main Execution Block
 async def run_discord_bot():
     await bot.start(discord_bot)
 

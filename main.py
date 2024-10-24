@@ -115,25 +115,138 @@ def get_chats():
     except Exception as e:
         print(f"Error in get_chats: {e}")
         return json.dumps({"error": str(e)}), 500
+
+
 @app.get('/send_message')
 def send_message_user():
-    user = request.args.get('email')
-    message = request.args.get('channel')
-    channel_id = request.args.get('channel')
-    requests.get(f'{db_ip}/', params={'channel':channel_id, 'message': message, })
-    '''
-@app.get('/send_message')
-def send_message_api():
-    channel = request.args.get('channel')
+    user = request.cookies.get('email')
     message = request.args.get('message')
-    user = request.args.get('user')
+    channel_id = request.args.get('channel')
+
+    if not user:
+        return json.dumps({"error": "User email not found in cookies"}), 400
+    if not message:
+        return json.dumps({"error": "Message is required"}), 400
+    if not channel_id or not channel_id.isdigit():
+        return json.dumps({"error": "Valid channel ID is required"}), 400
 
     try:
-        result = asyncio.run(send_message(channel_id=int(channel), user_message=message, identifier=user))
-        return jsonify(result), 200 if 'success' in result else 400
-    except Exception as e:
-        print(f"Error sending user message via HTTP: {e}")
-        return jsonify({"error": str(e)}), 500
+        # Step 1: Check if the user has access to the channel
+        access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
+        if access_response.status_code != 200:
+            return json.dumps({"error": "Failed to fetch user access"}), 500
 
-    '''
+        allowed_channels = access_response.json()
+        if channel_id not in allowed_channels:
+            return json.dumps({'error': 'User does not have access to this channel'}), 403
+
+        # Step 2: Send the message via the backer backend
+        send_response = requests.get(f'{db_ip}/send_message', params={'channel': channel_id, 'message': message, 'user': user})
+        
+        if send_response.status_code == 200:
+            send_result = send_response.json()
+
+            # Step 3: If the message was successfully sent, check if AI is enabled
+            if send_result.get('success'):
+                channels_response = requests.get(f'{db_ip}/get', params={'table': 'channels', 'key': channel_id})
+                if channels_response.status_code == 200:
+                    channel_data = json.loads(channels_response.text)
+
+                    # Step 4: Check if AI is enabled for the channel
+                    if channel_data.get('AI_enabled') == True:
+                        send_message_ai(channel_id, message, user)
+
+            return send_result, 200
+
+        else:
+            return send_response.json(), send_response.status_code
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error communicating with the backer backend: {e}")
+        return json.dumps({"error": "Failed to communicate with the backer backend"}), 500
+
+    
+
+@app.get('/create_channel')
+def create_channel_api():
+    user = request.cookies.get('email') 
+    name = request.args.get('name')
+    message = request.args.get('message') 
+
+    if not user:
+        return json.dumps({"error": "User email not found in cookies"}), 400
+    if not name:
+        return json.dumps({"error": "Channel name is required"}), 400
+    if not message:
+        return json.dumps({"error": "Message is required"}), 400
+
+    params = {
+        'name': name,
+        'user': user
+    }
+
+    try:
+        create_response = requests.get(f'{db_ip}/create_chat', params=params)
+
+        if create_response.status_code == 200:
+            create_data = create_response.json()
+            if create_data.get('success'):
+                channel_id = create_data.get('channel_id')
+
+                send_params = {
+                    'channel': channel_id,
+                    'message': message,
+                    'user': user
+                }
+                send_response = requests.get(f'{db_ip}/send_message', params=send_params)
+
+                if send_response.status_code == 200:
+                    return json.dumps({"success": True, "message": "Channel created and message sent successfully."}), 200
+                else:
+                    return json.dumps({"error": "Channel created but failed to send message."}), send_response.status_code
+            else:
+                return json.dumps({"error": create_data.get('error')}), 400
+        else:
+            return json.dumps(create_response.json()), create_response.status_code
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error communicating with the backer backend: {e}")
+        return json.dumps({"error": "Failed to communicate with backer backend"}), 500
+
+@app.get('/toggle_ai')
+def toggle_ai_api():
+    user = request.cookies.get('email')  
+    channel = request.args.get('channel')  
+    toggle = request.args.get('toggle')     
+    
+    
+    if not user:
+        return json.dumps({"error": "User email not found in cookies"}), 400
+    if not channel or not channel.isdigit():
+        return json.dumps({"error": "Valid channel ID is required"}), 400
+    if toggle not in ["true", "false"]:
+        return json.dumps({"error": "Toggle value must be 'true' or 'false'"}), 400
+
+    try:
+        toggle_params = {
+            'channel': channel,
+            'toggle': toggle
+        }
+        toggle_response = requests.get(f'{db_ip}/toggle_ai', params=toggle_params)
+
+        if toggle_response.status_code == 200:
+            toggle_data = toggle_response.json()
+            if toggle_data.get('success'):
+                return json.dumps({"success": True, "message": f"AI has been {'enabled' if toggle == 'true' else 'disabled'} for channel {channel}."}), 200
+            else:
+                return json.dumps({"error": toggle_data.get('error')}), 400
+        else:
+            return json.dumps({"error": "Failed to communicate with the backend."}), toggle_response.status_code
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error communicating with the backer backend: {e}")
+        return json.dumps({"error": "Failed to communicate with the backend."}), 500
+    
+
+
 app.run(host="127.0.0.1", port=int(sys.argv[1]))
