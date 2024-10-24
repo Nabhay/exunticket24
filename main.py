@@ -1,21 +1,23 @@
-from flask import request, redirect, Response
-from monster import render, Flask, escapeString
+from quart import request, redirect, Response
+from monster import render, Quart, escapeString
 import sys, json
 import hashlib, base64
 import secret_parser
 import requests, hashlib
 from docs import process_docs_in_folder
 import resend
+import aiohttp
+import asyncio
+import os
 
-app = Flask(__name__)
-
+app = Quart(__name__)
 
 resend.api_key = secret_parser.parse("variables.txt")["RESEND"]
 salt = secret_parser.parse("variables.txt")["SALT"]
-db_ip =  secret_parser.parse("variables.txt")["DB_IP"]
+db_ip = secret_parser.parse("variables.txt")["DB_IP"]
 
-
-daisyui = "<script>"+ open("public/pako.js").read()+ "</script>"+ """<script>
+# Embedding daisyui and tailwind styles
+daisyui = "<script>" + open("public/pako.js").read() + "</script>" + """<script>
     function decompressGzippedString(base64String) {
         try {
             const binaryString = atob(base64String);
@@ -31,7 +33,7 @@ daisyui = "<script>"+ open("public/pako.js").read()+ "</script>"+ """<script>
             return null;
         }
     }
-    """+ f"""
+    """ + f"""
     var daisycss="{open("public/daisyui.b64").read()}";
     var style=document.createElement("style");
     style.textContent=decompressGzippedString(daisycss);
@@ -41,6 +43,83 @@ daisyui = "<script>"+ open("public/pako.js").read()+ "</script>"+ """<script>
 
 tailwind = "<script>eval(atob(`" + base64.b64encode(open("public/tailwind.js").read().encode()).decode() + "`))</script>"
 
+
+async def send_message_ai(channel_id, message):
+    try:
+        # Load system prompt from file
+        system_prompt_file = "system_prompt.txt"
+        if os.path.exists(system_prompt_file):
+            with open(system_prompt_file, 'r') as f:
+                system_prompt = f.read()
+        else:
+            print("System prompt file not found.")
+            return
+
+        # Fetch Google Docs content
+        try:
+            google_docs_content = process_docs_in_folder()
+        except Exception as e:
+            print(f"Error scraping Google Docs: {e}")
+            google_docs_content = "" 
+
+        # Fetch chat history for the specified channel from the backer backend
+        chat_history_response = requests.get(f'{db_ip}/get', params={'table': 'channels', 'key': channel_id})
+        chat_history = chat_history_response.json()
+
+        # Prepare the request data to send to Gemini API
+        request_data = {
+            "channel_id": channel_id,
+            "message": message,
+            "chat_history": chat_history,
+            "system_prompt": system_prompt,
+            "docs_content": google_docs_content
+        }
+
+        # Use multiple API keys in sequence to send the request
+        api_keys = secret_parser.parse("variables.txt")["GEMINI_API_KEYS"]
+        async with aiohttp.ClientSession() as session:
+            for api_key in api_keys:
+                headers = {
+                    'Authorization': f'Bearer {api_key}',
+                    'Content-Type': 'application/json'
+                }
+
+                async with session.post('https://gemini-api-endpoint.com/ai_response', json=request_data, headers=headers) as resp:
+                    if resp.status == 200:
+                        try:
+                            response_json = await resp.json()
+                            if "response" in response_json and "create_ticket" in response_json:
+                                # Send the AI response to the backer backend's /send_message endpoint
+                                backer_response = requests.get(
+                                    f"{db_ip}/send_message",
+                                    params={
+                                        "channel": channel_id,
+                                        "message": response_json["response"],
+                                        "user": "Exun AI"
+                                    }
+                                )
+                                print("AI response sent to the channel.")
+
+                                # Check if a ticket was created, and toggle AI off if so
+                                if response_json["create_ticket"]:
+                                    toggle_response = requests.get(
+                                        f"{db_ip}/toggle_ai",
+                                        params={"channel": channel_id, "toggle": "false"}
+                                    )
+                                    print("AI disabled for the channel.")
+                                
+                                break  # Exit the loop on success
+                            else:
+                                print("Unexpected response format:", response_json)
+                        except Exception as e:
+                            print(f"Error processing response: {e}")
+                    else:
+                        print(f"Failed to send request using API key: {api_key}. Status code: {resp.status}")
+
+    except Exception as e:
+        print(f"Error in send_message_ai: {e}")
+
+# Home route
 @app.get("/")
 def home():
     chat_window = open('components/chat_window.html').read()
@@ -48,6 +127,7 @@ def home():
     channels = open('components/channels.html').read()
     return render("index", locals() | globals())
 
+# Get sum route
 @app.get('/get_sum')
 def get_sum():
     try:
@@ -75,26 +155,26 @@ def get_sum():
                 continue
 
         return json.dumps(channels_hash), 200
-    
+
     except Exception as e:
         print(f"Error in get_sum: {e}")
         return json.dumps({"error": str(e)}), 500
 
-
+# Get chats route
 @app.get('/get_chats')
 def get_chats():
     try:
         user = request.args.get('email')
         if not user:
             return json.dumps({"error": "Email parameter is required."}), 400
-        
+
         channel_ids = request.args.getlist('channel_ids')
-        
+
         user_access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
         if user_access_response.status_code != 200:
             return json.dumps({"error": "Failed to fetch user access."}), 500
         user_access = json.loads(user_access_response.text)
-        
+
         channels_response = requests.get(f'{db_ip}/get_all', params={'table': 'channels'})
         if channels_response.status_code != 200:
             return json.dumps({"error": "Failed to fetch channels."}), 500
@@ -111,14 +191,14 @@ def get_chats():
                 continue
 
         return json.dumps(user_channels), 200
-    
+
     except Exception as e:
         print(f"Error in get_chats: {e}")
         return json.dumps({"error": str(e)}), 500
 
-
+# Send message route
 @app.get('/send_message')
-def send_message_user():
+async def send_message_user():
     user = request.cookies.get('email')
     message = request.args.get('message')
     channel_id = request.args.get('channel')
@@ -154,7 +234,8 @@ def send_message_user():
 
                     # Step 4: Check if AI is enabled for the channel
                     if channel_data.get('AI_enabled') == True:
-                        send_message_ai(channel_id, message, user)
+                        # Call the async function to send the message to the AI
+                        await send_message_ai(channel_id, message)
 
             return send_result, 200
 
@@ -164,8 +245,6 @@ def send_message_user():
     except requests.exceptions.RequestException as e:
         print(f"Error communicating with the backer backend: {e}")
         return json.dumps({"error": "Failed to communicate with the backer backend"}), 500
-
-    
 
 @app.get('/create_channel')
 def create_channel_api():
@@ -246,7 +325,5 @@ def toggle_ai_api():
     except requests.exceptions.RequestException as e:
         print(f"Error communicating with the backer backend: {e}")
         return json.dumps({"error": "Failed to communicate with the backend."}), 500
-    
-
 
 app.run(host="127.0.0.1", port=int(sys.argv[1]))

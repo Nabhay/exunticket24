@@ -6,6 +6,7 @@ import litedb
 import json
 import asyncio
 import traceback
+import time
 from typing import Dict, Union
 
 # 1. Load secrets and initialize global constants
@@ -17,6 +18,12 @@ guild_id = secrets["guild"]
 channels = litedb.get_conn("channels")
 user_access = litedb.get_conn("user_access")
 conn_table = {"channels": channels, "user_access": user_access}
+
+user_rate_limit = {}
+
+RATE_LIMIT_WINDOW = 60  # Time window in seconds (e.g., 1 minute)
+RATE_LIMIT_MAX_MESSAGES = 2  # Maximum messages allowed within the window
+
 
 # 3. Initialize Quart app
 app = Quart(__name__)
@@ -165,8 +172,32 @@ async def send_message_api():
     user = request.args.get('user')
 
     try:
+        current_time = time.time()
+
+        # Bypass rate limit for Exun AI
+        if user == "Exun AI":
+            result = await send_message(channel_id=int(channel), user_message=message, identifier=user)
+            return jsonify(result), 200 if 'success' in result else 400
+
+        # Initialize user entry if it doesn't exist
+        if user not in user_rate_limit:
+            user_rate_limit[user] = []
+
+        # Filter out old timestamps that are outside the rate limit window
+        user_rate_limit[user] = [t for t in user_rate_limit[user] if current_time - t < RATE_LIMIT_WINDOW]
+
+        # Check if the user has hit the rate limit
+        if len(user_rate_limit[user]) >= RATE_LIMIT_MAX_MESSAGES:
+            return jsonify({"error": f"Rate limit exceeded. You can only send {RATE_LIMIT_MAX_MESSAGES} messages every {RATE_LIMIT_WINDOW} seconds."}), 429
+
+        # Proceed with sending the message
         result = await send_message(channel_id=int(channel), user_message=message, identifier=user)
+
+        # Record the current timestamp for this user
+        user_rate_limit[user].append(current_time)
+
         return jsonify(result), 200 if 'success' in result else 400
+
     except Exception as e:
         print(f"Error sending user message via HTTP: {e}")
         return jsonify({"error": str(e)}), 500

@@ -1,10 +1,10 @@
 from os import PathLike
-import uuid, json, base64, flask
-from flask import send_from_directory, request, Flask
+import uuid, json, base64, quart
+from quart import send_from_directory, request, Quart
 from urllib.parse import quote
 import traceback
 
-FlaskClass=Flask
+QuartClass=Quart
 
 def escapeString(a):
     return a.replace("\\", "\\\\").replace("\"", "\\\"").replace("'", "\\'").replace("\n", "\\n").replace("`", "\\`").replace("</script>", "</`+`script>").replace("<script>", "<`+`script>")
@@ -39,7 +39,7 @@ class Render():
     def __init__(self, render="") -> None:
         self.render=render
 
-class Flask(Flask):
+class Quart(Quart):
     def __init__(self, import_name: str, static_url_path: str | None = None, static_folder: str | PathLike | None = "static", static_host: str | None = None, host_matching: bool = False, subdomain_matching: bool = False, template_folder: str | None = "templates", instance_path: str | None = None, instance_relative_config: bool = False, root_path: str | None = None):
         super().__init__(import_name, static_url_path, static_folder, static_host, host_matching, subdomain_matching, template_folder, instance_path, instance_relative_config, root_path)
         @self.route('/<path:path>')
@@ -49,11 +49,11 @@ class Flask(Flask):
         if isinstance(object, Render):
             if "MONSTERSIGNALS" in request.cookies:
                 if request.cookies["MONSTERSIGNALS"]!="true":
-                    return FlaskClass.response_class(MonsterSave+object.render)
+                    return QuartClass.response_class(MonsterSave+object.render)
                 else:
-                    return FlaskClass.response_class(MonsterDefault+object.render)
+                    return QuartClass.response_class(MonsterDefault+object.render)
             else:
-                return FlaskClass.response_class(MonsterSave+object.render)
+                return QuartClass.response_class(MonsterSave+object.render)
         return super().make_response(object)
 
 def set_headers(response, path):
