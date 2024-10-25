@@ -2,22 +2,24 @@ from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
 
 SERVICE_ACCOUNT_FILE = 'creds.json'
-FOLDER_ID = '1_EqLjJDflWtddVb1DrAc3SM9P2NYG0Tz'  # Replace with your actual folder ID
 
-SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/documents.readonly']
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 
+          'https://www.googleapis.com/auth/documents.readonly',
+          'https://www.googleapis.com/auth/spreadsheets.readonly']
 
 # Authenticate with service account
 credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 drive_service = build('drive', 'v3', credentials=credentials)
 docs_service = build('docs', 'v1', credentials=credentials)
+sheets_service = build('sheets', 'v4', credentials=credentials)
 
-# List all Google Docs in a folder
-def list_google_docs_in_folder(service, folder_id):
-    query = f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.document'"
+# List all Google Docs and Sheets in a folder
+def list_google_docs_and_sheets_in_folder(service, folder_id):
+    query = f"'{folder_id}' in parents and (mimeType='application/vnd.google-apps.document' or mimeType='application/vnd.google-apps.spreadsheet')"
     results = service.files().list(
         q=query,
         pageSize=100,
-        fields="nextPageToken, files(id, name)"
+        fields="nextPageToken, files(id, name, mimeType)"
     ).execute()
     items = results.get('files', [])
     
@@ -133,20 +135,28 @@ def convert_to_markdown(doc_content):
     
     return markdown
 
-# Main function to process all Google Docs in the folder
-def process_docs_in_folder(folder_id):
-    docs = list_google_docs_in_folder(drive_service, folder_id)
-    for doc in docs:
-        doc_id = doc['id']
-        doc_name = doc['name']
-        print(f'Processing document: {doc_name}')
-        
-        # Get document content
-        doc_content = get_google_doc_content(doc_id, docs_service)
-        
-        # Convert to Markdown
-        markdown_content = convert_to_markdown(doc_content)
-        print(f'Markdown for {doc_name}:\n{markdown_content}\n')
+# Get content of Google Sheet and return JSON
+def get_google_sheet_content(sheet_id, sheets_service):
+    sheet = sheets_service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+    return sheet
 
-# Run the function
-process_docs_in_folder(FOLDER_ID)
+# Main function to process all Google Docs and Sheets in the folder
+def process_docs_and_sheets_in_folder(folder_id):
+    files = list_google_docs_and_sheets_in_folder(drive_service, folder_id)
+    for file in files:
+        file_id = file['id']
+        file_name = file['name']
+        file_type = file['mimeType']
+        
+        print(f'Processing file: {file_name} ({file_type})')
+        
+        # Process Google Docs
+        if file_type == 'application/vnd.google-apps.document':
+            doc_content = get_google_doc_content(file_id, docs_service)
+            markdown_content = convert_to_markdown(doc_content)
+            print(f'Markdown for {file_name}:\n{markdown_content}\n')
+        
+        # Process Google Sheets
+        elif file_type == 'application/vnd.google-apps.spreadsheet':
+            sheet_content = get_google_sheet_content(file_id, sheets_service)
+            print(f'JSON content for {file_name}:\n{sheet_content}\n')

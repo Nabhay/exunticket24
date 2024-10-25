@@ -4,7 +4,7 @@ import sys, json
 import hashlib, base64
 import secret_parser
 import requests, hashlib
-from docs import process_docs_in_folder
+import docs
 import resend
 import aiohttp
 import asyncio
@@ -57,7 +57,7 @@ async def send_message_ai(channel_id, message):
 
         # Fetch Google Docs content
         try:
-            google_docs_content = process_docs_in_folder()
+            google_docs_content = docs.process_docs_and_sheets_in_folder('1bO-xjs1sR2Dk7ehXHYxKC0KvH_wTkZy-')
         except Exception as e:
             print(f"Error scraping Google Docs: {e}")
             google_docs_content = "" 
@@ -131,7 +131,7 @@ def home():
 @app.get('/get_sum')
 def get_sum():
     try:
-        user = request.args.get('email')
+        user = request.cookies.get('email')
         if not user:
             return json.dumps({"error": "Email parameter is required."}), 400
         user_access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
@@ -164,7 +164,7 @@ def get_sum():
 @app.get('/get_chats')
 def get_chats():
     try:
-        user = request.args.get('email')
+        user = request.cookies.get('email')
         if not user:
             return json.dumps({"error": "Email parameter is required."}), 400
 
@@ -248,9 +248,9 @@ async def send_message_user():
 
 @app.get('/create_channel')
 def create_channel_api():
-    user = request.cookies.get('email') 
+    user = request.cookies.get('email')
     name = request.args.get('name')
-    message = request.args.get('message') 
+    message = request.args.get('message')
 
     if not user:
         return json.dumps({"error": "User email not found in cookies"}), 400
