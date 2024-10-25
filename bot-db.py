@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from flask.sansio.app import sys
 import secret_parser
 from quart import Quart, request, jsonify
 import litedb
@@ -10,7 +11,7 @@ import time
 from typing import Dict, Union
 
 # 1. Load secrets and initialize global constants
-secrets = secret_parser.parse('variables.txt')
+secrets = secret_parser.parse("variables.txt")
 discord_bot = secrets["discord"]
 guild_id = secrets["guild"]
 
@@ -34,12 +35,14 @@ intents.messages = True
 intents.message_content = True
 intents.guilds = True
 intents.members = True
-bot = commands.Bot(command_prefix='/', intents=intents)
+bot = commands.Bot(command_prefix="/", intents=intents)
+
 
 # 5. Bot Events
 @bot.event
 async def on_ready():
     print("Bot Started")
+
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -47,18 +50,36 @@ async def on_message(message: discord.Message):
         return
 
     await bot.process_commands(message)
-    
+
     try:
-        if message.channel.category.name in ["announcements", "restricted-announcements"] or \
-                (message.channel.category and message.channel.category.name == "chat" and
-                 (await message.channel.fetch_message(message.reference.message_id)).author == message.guild.me if message.reference else False):
-            channels = json.loads(conn_table['channels'].get(str(message.channel.id)))
-            channels["messages"].append({'role': 'Exunite', 'message': message.content, 'time': message.created_at.timestamp(), 'message_id': message.id})
-            conn_table['channels'].set(message.channel.id, json.dumps(channels))
+        if message.channel.category.name in [
+            "announcements",
+            "restricted-announcements",
+        ] or (
+            message.channel.category
+            and message.channel.category.name == "chat"
+            and (
+                await message.channel.fetch_message(message.reference.message_id)
+            ).author
+            == message.guild.me
+            if message.reference
+            else False
+        ):
+            channels = json.loads(conn_table["channels"].get(str(message.channel.id)))
+            channels["messages"].append(
+                {
+                    "role": "Exunite",
+                    "message": message.content,
+                    "time": message.created_at.timestamp(),
+                    "message_id": message.id,
+                }
+            )
+            conn_table["channels"].set(message.channel.id, json.dumps(channels))
 
     except Exception as e:
         print(f"Error handling message: {e}")
         traceback.print_exc()
+
 
 @bot.event
 async def on_message_edit(before, after):
@@ -66,15 +87,24 @@ async def on_message_edit(before, after):
         return
 
     try:
-        if before.channel.category and before.channel.category.name in ["restricted-announcements", "announcements", "chat"]:
-            channels = json.loads(conn_table['channels'].get(before.channel.id))
-            for i in range(len(channels['messages'])):
-                if channels['messages'][i]['message_id'] == before.id:
-                    channels['messages'][i] = {'role': 'Exunite', 'message': after.content, 'time': after.edited_at.timestamp()}
-                    conn_table['channels'].set(before.channel.id, json.dumps(channels))
+        if before.channel.category and before.channel.category.name in [
+            "restricted-announcements",
+            "announcements",
+            "chat",
+        ]:
+            channels = json.loads(conn_table["channels"].get(before.channel.id))
+            for i in range(len(channels["messages"])):
+                if channels["messages"][i]["message_id"] == before.id:
+                    channels["messages"][i] = {
+                        "role": "Exunite",
+                        "message": after.content,
+                        "time": after.edited_at.timestamp(),
+                    }
+                    conn_table["channels"].set(before.channel.id, json.dumps(channels))
 
     except Exception as e:
         print(f"Error handling message edit: {e}")
+
 
 @bot.event
 async def on_message_delete(message: discord.Message):
@@ -82,13 +112,20 @@ async def on_message_delete(message: discord.Message):
         return
 
     try:
-        if message.channel.category and message.channel.category.name in ["announcements", "chat", "restricted-announcements"]:
-            channels = json.loads(conn_table['channels'].get(message.channel.id))
-            channels['messages'] = [msg for msg in channels['messages'] if msg['message_id'] != message.id]
-            conn_table['channels'].set(message.channel.id, json.dumps(channels))
+        if message.channel.category and message.channel.category.name in [
+            "announcements",
+            "chat",
+            "restricted-announcements",
+        ]:
+            channels = json.loads(conn_table["channels"].get(message.channel.id))
+            channels["messages"] = [
+                msg for msg in channels["messages"] if msg["message_id"] != message.id
+            ]
+            conn_table["channels"].set(message.channel.id, json.dumps(channels))
 
     except Exception as e:
         print(f"Error handling message delete: {e}")
+
 
 async def create_channels(name: str, category: str, user):
     try:
@@ -100,32 +137,41 @@ async def create_channels(name: str, category: str, user):
 
         channel = await guild.create_text_channel(name, category=category_channel)
 
-        struct = {'messages': [], 'type': category, 'name': name, 'AI_enabled': 'false'}
+        struct = {"messages": [], "type": category, "name": name, "AI_enabled": "false"}
         if category == "chat":
-            user_access_data = json.loads(conn_table['user_access'].get(user))
+            user_access_data = json.loads(conn_table["user_access"].get(user))
             user_access_data.append(channel.id)
-            conn_table['user_access'].set(user, json.dumps(user_access_data))
-            struct['AI_enabled'] = 'true'
+            conn_table["user_access"].set(user, json.dumps(user_access_data))
+            struct["AI_enabled"] = "true"
 
-        conn_table['channels'].set(channel.id, json.dumps(struct))
+        conn_table["channels"].set(channel.id, json.dumps(struct))
         return {"success": True, "channel_id": channel.id}
 
     except Exception as e:
         print(f"Error creating channels: {e}")
         return {"error": str(e)}
 
+
 async def send_message(user_message, identifier, channel_id):
     try:
         channel = bot.get_channel(channel_id)
-        channels = json.loads(conn_table['channels'].get(channel_id))
-        message = await channel.send(f'`{identifier}: {user_message}`')
-        channels["messages"].append({'role': identifier, 'message': user_message, 'time': message.created_at.timestamp(), 'message_id': message.id})
-        conn_table['channels'].set(channel_id, json.dumps(channels))
+        channels = json.loads(conn_table["channels"].get(channel_id))
+        message = await channel.send(f"`{identifier}: {user_message}`")
+        channels["messages"].append(
+            {
+                "role": identifier,
+                "message": user_message,
+                "time": message.created_at.timestamp(),
+                "message_id": message.id,
+            }
+        )
+        conn_table["channels"].set(channel_id, json.dumps(channels))
         return {"success": True}
 
     except Exception as e:
         print(f"Error sending user message: {e}")
         return {"error": str(e)}
+
 
 # 7. API Endpoints
 @app.route("/get", methods=["GET"])
@@ -133,6 +179,7 @@ async def get_api():
     table = request.args.get("table")
     key = request.args.get("key")
     return conn_table[table].get(key)
+
 
 @app.route("/set", methods=["GET"])
 async def set_api():
@@ -142,6 +189,7 @@ async def set_api():
     conn_table[table].set(key, value)
     return jsonify({"success": True})
 
+
 @app.route("/delete", methods=["GET"])
 async def delete_api():
     table = request.args.get("table")
@@ -149,63 +197,80 @@ async def delete_api():
     conn_table[table].delete(key)
     return jsonify({"success": True})
 
+
 @app.route("/get_all", methods=["GET"])
 async def get_all_api():
     table = request.args.get("table")
     return conn_table[table].get_all()
 
-@app.route('/create_chat', methods=["GET"])
+
+@app.route("/create_chat", methods=["GET"])
 async def create_channel():
-    name = request.args.get('name')
-    user = request.args.get('user')
+    name = request.args.get("name")
+    user = request.args.get("user")
     try:
-        result = await create_channels(name=name, category='chat', user=user)
-        return jsonify(result), 200 if 'success' in result else 400
+        result = await create_channels(name=name, category="chat", user=user)
+        return jsonify(result), 200 if "success" in result else 400
     except Exception as e:
         print(f"Error creating chat via HTTP: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/send_message', methods=["GET"])
+
+@app.route("/send_message", methods=["GET"])
 async def send_message_api():
-    channel = request.args.get('channel')
-    message = request.args.get('message')
-    user = request.args.get('user')
+    channel = request.args.get("channel")
+    message = request.args.get("message")
+    user = request.args.get("user")
 
     try:
         current_time = time.time()
 
         # Bypass rate limit for Exun AI
         if user == "Exun AI":
-            result = await send_message(channel_id=int(channel), user_message=message, identifier=user)
-            return jsonify(result), 200 if 'success' in result else 400
+            result = await send_message(
+                channel_id=int(channel), user_message=message, identifier=user
+            )
+            return jsonify(result), 200 if "success" in result else 400
 
         # Initialize user entry if it doesn't exist
         if user not in user_rate_limit:
             user_rate_limit[user] = []
 
         # Filter out old timestamps that are outside the rate limit window
-        user_rate_limit[user] = [t for t in user_rate_limit[user] if current_time - t < RATE_LIMIT_WINDOW]
+        user_rate_limit[user] = [
+            t for t in user_rate_limit[user] if current_time - t < RATE_LIMIT_WINDOW
+        ]
 
         # Check if the user has hit the rate limit
         if len(user_rate_limit[user]) >= RATE_LIMIT_MAX_MESSAGES:
-            return jsonify({"error": f"Rate limit exceeded. You can only send {RATE_LIMIT_MAX_MESSAGES} messages every {RATE_LIMIT_WINDOW} seconds."}), 429
+            return (
+                jsonify(
+                    {
+                        "error": f"Rate limit exceeded. You can only send {RATE_LIMIT_MAX_MESSAGES} messages every {RATE_LIMIT_WINDOW} seconds."
+                    }
+                ),
+                429,
+            )
 
         # Proceed with sending the message
-        result = await send_message(channel_id=int(channel), user_message=message, identifier=user)
+        result = await send_message(
+            channel_id=int(channel), user_message=message, identifier=user
+        )
 
         # Record the current timestamp for this user
         user_rate_limit[user].append(current_time)
 
-        return jsonify(result), 200 if 'success' in result else 400
+        return jsonify(result), 200 if "success" in result else 400
 
     except Exception as e:
         print(f"Error sending user message via HTTP: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.get('/toggle_ai')
+
+@app.get("/toggle_ai")
 def toggle_ai_api():
-    channel = request.args.get('channel', "")
-    toggle = request.args.get('toggle', "")
+    channel = request.args.get("channel", "")
+    toggle = request.args.get("toggle", "")
 
     if not channel.isdigit() or toggle not in ["true", "false"]:
         return jsonify({"error": "Invalid parameters"}), 400
@@ -219,21 +284,25 @@ def toggle_ai_api():
         print(f"Error toggling AI: {e}")
         return jsonify({"error": str(e)}), 500
 
+
 def toggle_ai(channel: int, enable: bool) -> Dict[str, Union[bool, str]]:
     try:
-        channels_data = json.loads(conn_table['channels'].get(channel))
-        channels_data['AI_enabled'] = enable
-        conn_table['channels'].set(channel, json.dumps(channels_data))
+        channels_data = json.loads(conn_table["channels"].get(channel))
+        channels_data["AI_enabled"] = enable
+        conn_table["channels"].set(channel, json.dumps(channels_data))
         return {"success": True}
     except Exception as e:
         print(f"Error toggling AI: {e}")
         return {"error": str(e)}
 
+
 async def create_restricted_channel(channel: str, allowed: list) -> Dict[str, any]:
     try:
         for user_id in allowed:
-            response = await create_channels(name=channel, category="restricted-announcements", user=None)
-            
+            response = await create_channels(
+                name=channel, category="restricted-announcements", user=None
+            )
+
             if response.get("success"):
                 channel_id = response["channel_id"]
                 user_access_data = user_access.get(user_id)
@@ -242,18 +311,24 @@ async def create_restricted_channel(channel: str, allowed: list) -> Dict[str, an
                 else:
                     user_access_list = []
                 user_access_list.append(channel_id)
-                conn_table['user_access'].set(user_id, json.dumps(user_access_list))
+                conn_table["user_access"].set(user_id, json.dumps(user_access_list))
             else:
-                return {"error": f"Failed to create channel for user {user_id}: {response.get('error')}"}
-        
-        return {"success": True, "message": f"Restricted channel '{channel}' created and access granted to specified users."}
-    
+                return {
+                    "error": f"Failed to create channel for user {user_id}: {response.get('error')}"
+                }
+
+        return {
+            "success": True,
+            "message": f"Restricted channel '{channel}' created and access granted to specified users.",
+        }
+
     except Exception as e:
         print(f"Error creating restricted channel: {e}")
         return {"error": str(e)}
 
+
 # 8. Bot Commands
-@bot.command(name='create_restricted')
+@bot.command(name="create_restricted")
 async def create_restricted(ctx, channel: str, *allowed_users: str):
     result = await create_restricted_channel(channel, list(allowed_users))
     if result.get("success"):
@@ -261,7 +336,8 @@ async def create_restricted(ctx, channel: str, *allowed_users: str):
     else:
         await ctx.send(f"Error: {result.get('error')}")
 
-@bot.command(name='create_announcements')
+
+@bot.command(name="create_announcements")
 async def create_announcements_command(ctx, channel: str):
     result = await create_announcements(channel)
     if result.get("success"):
@@ -269,23 +345,31 @@ async def create_announcements_command(ctx, channel: str):
     else:
         await ctx.send(f"Error: {result.get('error')}")
 
+
 async def create_announcements(channel: str) -> Dict[str, any]:
     try:
-        response = await create_channels(name=channel, category="announcements", user=None)  # Adjust user as necessary
+        response = await create_channels(
+            name=channel, category="announcements", user=None
+        )  # Adjust user as necessary
         if response.get("success"):
-            return {"success": True, "message": f"Announcement channel '{channel}' created."}
+            return {
+                "success": True,
+                "message": f"Announcement channel '{channel}' created.",
+            }
         else:
             return {"error": response.get("error")}
-    
+
     except Exception as e:
         print(f"Error creating announcement channel: {e}")
         return {"error": str(e)}
+
 
 # 9. Main Execution Block
 async def run_discord_bot():
     await bot.start(discord_bot)
 
+
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.create_task(run_discord_bot())
-    app.run(host="127.0.0.1", port=3000, loop=loop)
+    app.run(host="127.0.0.1", port=int(sys.argv[1]), loop=loop)

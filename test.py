@@ -8,7 +8,7 @@ import asyncio
 from typing import Dict, Union
 import threading
 
-secrets = secret_parser.parse('variables.txt')
+secrets = secret_parser.parse("variables.txt")
 
 discord_bot = secrets["discord"]
 guild_id = secrets["guild"]
@@ -18,4 +18,4 @@ user_access = litedb.get_conn("user_access")
 
 conn_table = {"channels": channels, "user_access": user_access}
 
-conn_table["user_access"].set('me', json.dumps([]))
+conn_table["user_access"].set("me", json.dumps([]))

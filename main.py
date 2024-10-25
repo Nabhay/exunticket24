@@ -1,5 +1,5 @@
-from quart import request, redirect, Response
-from monster import render, Quart, escapeString
+from flask import request, redirect, Response
+from monster import render, Flask, escapeString
 import sys, json
 import hashlib, base64
 import secret_parser
@@ -8,18 +8,21 @@ import docs
 import resend
 import aiohttp
 import os
+import tracemalloc
 
-app = Quart(__name__)
+tracemalloc.start()
 
-resend.api_key = secret_parser.parse("variables.txt")["RESEND"]
+app = Flask(__name__)
+
 salt = secret_parser.parse("variables.txt")["SALT"]
 db_ip = secret_parser.parse("variables.txt")["DB_IP"]
+ai_ip = secret_parser.parse("variables.txt")["AI_IP"]
 
 # Embedding daisyui and tailwind styles
 daisyui = "<script>" + open("public/pako.js").read() + "</script>" + """<script>
     function decompressGzippedString(base64String) {
         try {
-            const binaryString = atob(base64String);
+            const binaryString = atob(base64String);x
             const len = binaryString.length;
             const bytes = new Uint8Array(len);
             for (let i = 0; i < len; i++) {
@@ -42,88 +45,9 @@ daisyui = "<script>" + open("public/pako.js").read() + "</script>" + """<script>
 
 tailwind = "<script>eval(atob(`" + base64.b64encode(open("public/tailwind.js").read().encode()).decode() + "`))</script>"
 
-
-async def send_message_ai(channel_id, message):
-    try:
-        # Load system prompt from file
-        system_prompt_file = "system_prompt.txt"
-        if os.path.exists(system_prompt_file):
-            with open(system_prompt_file, 'r') as f:
-                system_prompt = f.read()
-        else:
-            print("System prompt file not found.")
-            return
-
-        # Fetch Google Docs content
-        try:
-            google_docs_content = docs.process_docs_and_sheets_in_folder('1bO-xjs1sR2Dk7ehXHYxKC0KvH_wTkZy-')
-        except Exception as e:
-            print(f"Error scraping Google Docs: {e}")
-            google_docs_content = "" 
-
-        # Fetch chat history for the specified channel from the backer backend
-        chat_history_response = requests.get(f'{db_ip}/get', params={'table': 'channels', 'key': channel_id})
-        chat_history = chat_history_response.json()
-
-        # Prepare the request data to send to Gemini API
-        request_data = {
-            "channel_id": channel_id,
-            "message": message,
-            "chat_history": chat_history,
-            "system_prompt": system_prompt,
-            "docs_content": google_docs_content
-        }
-
-        # Use multiple API keys in sequence to send the request
-        api_keys = secret_parser.parse("variables.txt")["GEMINI_API_KEYS"]
-        async with aiohttp.ClientSession() as session:
-            for api_key in api_keys:
-                headers = {
-                    'Authorization': f'Bearer {api_key}',
-                    'Content-Type': 'application/json'
-                }
-
-                async with session.post('https://gemini-api-endpoint.com/ai_response', json=request_data, headers=headers) as resp:
-                    if resp.status == 200:
-                        try:
-                            response_json = await resp.json()
-                            if "response" in response_json and "create_ticket" in response_json:
-                                # Send the AI response to the backer backend's /send_message endpoint
-                                backer_response = requests.get(
-                                    f"{db_ip}/send_message",
-                                    params={
-                                        "channel": channel_id,
-                                        "message": response_json["response"],
-                                        "user": "Exun AI"
-                                    }
-                                )
-                                print("AI response sent to the channel.")
-
-                                # Check if a ticket was created, and toggle AI off if so
-                                if response_json["create_ticket"]:
-                                    toggle_response = requests.get(
-                                        f"{db_ip}/toggle_ai",
-                                        params={"channel": channel_id, "toggle": "false"}
-                                    )
-                                    print("AI disabled for the channel.")
-                                
-                                break  # Exit the loop on success
-                            else:
-                                print("Unexpected response format:", response_json)
-                        except Exception as e:
-                            print(f"Error processing response: {e}")
-                    else:
-                        print(f"Failed to send request using API key: {api_key}. Status code: {resp.status}")
-
-    except Exception as e:
-        print(f"Error in send_message_ai: {e}")
-
 # Home route
 @app.get("/")
 def home():
-    chat_window = open('components/chat_window.html').read()
-    previous_chats = open('components/previous_chats.html').read()
-    channels = open('components/channels.html').read()
     return render("index", locals() | globals())
 
 # Get sum route
@@ -144,13 +68,14 @@ def get_sum():
         channels = json.loads(channels_response.text)
 
         channels_hash = {}
-        for channel_id, channel_data in channels.items():
+        for channel in channels:
             try:
-                channel_info = json.loads(channel_data)
-                if channel_id in user_access or channel_info['type'] == 'announcements':
-                    channels_hash[channel_info['name']] = hashlib.sha256(channel_data.encode('utf-8')).hexdigest()
+
+                channel_info = json.loads(channel[1])
+                if str(channel[0]) in str(user_access) or channel_info['type'] == 'announcements':
+                    channels_hash[channel[0]] = hashlib.sha256(channel[1].encode('utf-8')).hexdigest()
             except json.JSONDecodeError:
-                print(f"Error decoding JSON for channel data: {channel_data}")
+                print(f"Error decoding JSON for channel data: {channel[1]}")
                 continue
 
         return json.dumps(channels_hash), 200
@@ -167,7 +92,7 @@ def get_chats():
         if not user:
             return json.dumps({"error": "Email parameter is required."}), 400
 
-        channel_ids = request.args.getlist('channel_ids')
+        channel_ids = json.loads(request.args.get('channel_ids'))
 
         user_access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
         if user_access_response.status_code != 200:
@@ -180,13 +105,13 @@ def get_chats():
         channels = json.loads(channels_response.text)
 
         user_channels = {}
-        for channel_id, channel_data in channels.items():
+        for channel in channels:
             try:
-                channel_info = json.loads(channel_data)
-                if (channel_id in user_access or channel_info['type'] == 'announcements') and channel_id in channel_ids:
-                    user_channels[channel_info['name']] = channel_data
+                channel_info = json.loads(channel[1])
+                if str(channel[0]) in str(channel_ids) and (str(channel[0]) in str(user_access) or channel_info['type'] == 'announcements'):
+                    user_channels[channel[0]] = channel_info
             except json.JSONDecodeError:
-                print(f"Error decoding JSON for channel data: {channel_data}")
+                print(f"Error decoding JSON for channel data: {channel[1]}")
                 continue
 
         return json.dumps(user_channels), 200
@@ -197,7 +122,7 @@ def get_chats():
 
 # Send message route
 @app.get('/api/send_message')
-async def send_message_user():
+def send_message_user():
     user = request.cookies.get('email')
     message = request.args.get('message')
     channel_id = request.args.get('channel')
@@ -214,8 +139,7 @@ async def send_message_user():
         access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
         if access_response.status_code != 200:
             return json.dumps({"error": "Failed to fetch user access"}), 500
-
-        allowed_channels = access_response.json()
+        allowed_channels = str(access_response.content)
         if channel_id not in allowed_channels:
             return json.dumps({'error': 'User does not have access to this channel'}), 403
 
@@ -233,8 +157,16 @@ async def send_message_user():
 
                     # Step 4: Check if AI is enabled for the channel
                     if channel_data.get('AI_enabled') == True:
-                        # Call the async function to send the message to the AI
-                        await send_message_ai(channel_id, message)
+                        # Call the Flask AI service
+                        ai_response = requests.post(
+                            f'http://{ai_ip}/send_message_ai',
+                            json={"channel_id": channel_id, "message": message}
+                        )
+
+                        if ai_response.status_code == 200:
+                            return ai_response.json(), 200
+                        else:
+                            return json.dumps({"error": "Failed to contact AI service"}), 500
 
             return send_result, 200
 
