@@ -1,3 +1,7 @@
-<div>
-  <py>return daisyui + tailwind + chat_window + previous_chats + channels</py>
+<div class="flex">
+  <div class="w-[30%] flex flex-col justify-between">
+    <py> return channels + previous_chats</py>
+  </div>
+  <py>return render("chat_window", locals() | globals()).render</py>
+  <py>return tailwind</py>
 </div>
