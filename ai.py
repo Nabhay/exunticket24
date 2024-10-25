@@ -5,10 +5,10 @@ import secret_parser
 import docs
 import aiohttp
 import json
+import requests
 
 app = Quart(__name__)
 
-# Load the necessary variables
 db_ip = secret_parser.parse("variables.txt")["DB_IP"]
 api_keys = eval(
     secret_parser.parse("variables.txt")["GEMINI_API_KEYS"]
@@ -88,9 +88,9 @@ async def send_message_ai():
         except json.JSONDecodeError:
             return jsonify({"error": "Received non-JSON response from the API."}), 500
         
-        send_message = request.get(f'{db_ip}/send_message?channel={channel_id}&user=Exun AI&message={response_data['response']}')
+        send_message = requests.get(f'{db_ip}/send_message?channel={channel_id}&user=Exun AI&message={response_data['response']}')
         if response_data['create_ticket'] == "true":
-            toggle_ai = request.get(f'{db_ip}/toggle_ai?channel={channel_id}&toggle=false')
+            toggle_ai = requests.get(f'{db_ip}/toggle_ai?channel={channel_id}&toggle=false')
 
         # Increment the request count
         request_count += 1
