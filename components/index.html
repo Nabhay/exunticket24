@@ -1,3 +1,247 @@
-<div>
-  <py>return daisyui + tailwind + chat_window + previous_chats + channels</py>
+<div class="flex">
+  <div class="w-[30%] flex flex-col justify-between">
+    <div class="w-full h-full bg-black/[0.045]">
+      <div class="p-5 font-bold border-b border-b-black/10">Channels</div>
+      <div class="p-5 overflow-y-auto w-full flex flex-col" id="announcements">
+        <a href="#" class="hover:bg-black/[0.05] p-2 rounded">Announcements</a>
+        <a href="#" class="hover:bg-black/[0.05] p-2 rounded">General</a>
+        <a href="#" class="hover:bg-black/[0.05] p-2 rounded">Build</a>
+      </div>
+    </div>
+    <div class="w-full h-full bg-black/[0.045]">
+      <div class="p-5 font-bold border-b border-b-black/10 flex justify-between items-center">
+        <h1>Queries</h1>
+        <button class="hover:bg-black/[0.05] rounded w-7 h-7" onclick="handleQuery('open')">+</button>
+      </div>
+      <div class="p-5 overflow-y-scroll w-full flex flex-col" id="queries">
+      </div>
+    </div>
+  </div>
+  <div class="flex flex-col h-screen w-full">
+    <div class="flex justify-between pr-10">
+      <div class="p-5 text-2xl">Chat Window</div>
+      <input type="checkbox"></input>
+    </div>
+    <div class="flex-grow overflow-y-auto" id="chatwindow">
+      <div class="chat chat-start hover:bg-black/[0.05] flex gap-5 p-5 items-center">
+
+        <h1 class="font-bold text-lg">
+          No Messages
+        </h1>
+      </div>
+    </div>
+    <form class="w-full flex justify-between px-10 py-4" id="form">
+      <input type="text" placeholder="Type your message" class="rounded-3xl p-4 flex-grow bg-black/[0.045]"
+        id="input"></input>
+    </form>
+  </div>
+  <py>return tailwind</py>
 </div>
+
+<dialog id="createQuery" class="w-[30vw] h-[30vh] p-5 rounded-xl border border-black/10">
+  <h1 class="font-bold text-xl">Create your query</h1>
+  <button class="absolute top-5 right-5 h-6 w-6 cursor-pointer" onclick="handleQuery('close')">
+    ✕
+  </button>
+  <form class="w-full flex pt-5 flex-col gap-5" id="queryForm">
+    <input type="text" placeholder="What is your Query about?" class="rounded-lg p-3 flex-grow bg-black/[0.045]"
+      id="queryName" required></input>
+    <input type="text" placeholder="Your Query" class="rounded-lg p-3 flex-grow bg-black/[0.045]" id="queryInput"
+      required></input>
+    <button>Submit</button>
+  </form>
+</dialog>
+
+<script>
+  let checksum = Signal("checksum", {})
+  let prevchecksum = Signal("prevchecksum", {})
+  let chats = Signal("chats", {})
+  let channelid = Signal("channelid", "")
+  let input = Signal("input", "")
+  let queryinput = Signal("queryinput", "")
+  let queryname = Signal("queryname", "")
+
+  let announcements = document.getElementById("announcements")
+  let queries = document.getElementById("queries")
+  let chatwindow = document.getElementById("chatwindow")
+  let form = document.getElementById("form");
+  let inp = document.getElementById("input");
+  let createQuery = document.getElementById("createQuery");
+  let queryForm = document.getElementById("queryForm");
+  let queryInput = document.getElementById("queryInput");
+  let queryName = document.getElementById("queryName");
+
+  async function getCheckSum() {
+    checksum.setValue(await (await fetch("/get_sum")).json())
+    let outdatedChannels = []
+    for (let id in checksum.Value()) {
+      if (checksum.Value()[id] != prevchecksum.Value()[id]) {
+        outdatedChannels.push(id)
+      }
+    }
+    if (outdatedChannels.length > 0) {
+      let updatedChats = await (await fetch(`/get_chats?channel_ids=[${outdatedChannels}]`)).json()
+      let newChats = chats.Value()
+      // refresh announcements and queires by clearing screen inorder to prevent deleted chats from persisting
+      for (let chat in updatedChats) {
+        channel = updatedChats[chat]
+
+        newChats[chat] = channel
+      }
+
+      chats.setValue(newChats)
+
+      announcements.innerHTML = ""
+      queries.innerHTML = ""
+
+      for (let chat in chats.Value()) {
+        let channel = chats.Value()[chat]
+
+        let a = document.createElement("button")
+        let text = document.createTextNode(channel["name"])
+
+        a.className = "hover:bg-black/[0.05] p-2 rounded text-start"
+        a.href = "#"
+        a.onclick = function () {handleClick(chat)}
+        a.appendChild(text)
+
+        if (channel["type"] == "announcements") {
+          announcements.appendChild(a)
+        } else {
+          queries.appendChild(a)
+        }
+      }
+
+      if (outdatedChannels.includes(channelid.Value())) {
+        handleClick(channelid.Value())
+      }
+
+    }
+    prevchecksum.setValue(checksum.Value())
+  }
+
+  getCheckSum()
+  setInterval(() => {
+    getCheckSum()
+  }, 5000)
+
+  function handleClick(id) {
+
+    if (id == "") {
+      return
+    }
+
+    channelid.setValue(id)
+
+    let chat = chats.Value()[channelid.Value()]
+    chatwindow.innerHTML = ""
+
+    console.log(chat)
+
+    if (chat["messages"].length < 1) {
+
+      let div = document.createElement("div")
+      div.className = "chat chat-start hover:bg-black/[0.05] flex gap-5 p-5 items-center"
+
+      let h1 = document.createElement("h1")
+      h1.className = "font-bold text-lg"
+
+      let h1content = document.createTextNode("No Messages")
+      h1.appendChild(h1content)
+
+
+      div.appendChild(h1)
+      chatwindow.appendChild(div)
+
+    }
+    for (i in chat["messages"]) {
+      let div = document.createElement("div")
+
+      if (chat["messages"][i]["role"] == "Exunite") {
+        div.className = "hover:bg-black/[0.05] flex gap-5 p-5 items-center"
+      } else {
+        div.className = "hover:bg-black/[0.05] flex flex-row-reverse gap-5 p-5 items-center text-right"
+      }
+
+      let img = document.createElement("img")
+      img.src = `https://api.dicebear.com/6.x/initials/svg?backgroundType=gradientLinear&seed=${chat["messages"][i]["role"]}`
+      img.alt = "Profile Image"
+      img.className = "rounded-[100%] h-12 w-12"
+
+      let div2 = document.createElement("div")
+      div2.className = "flex flex-col"
+
+      let h1 = document.createElement("h1")
+      h1.className = "font-bold text-lg"
+
+      let h1content = document.createTextNode(chat["messages"][i]["role"])
+      h1.appendChild(h1content)
+
+      div2.appendChild(h1)
+
+      let div4 = document.createElement("div")
+      div4.className = "text"
+
+      let p = document.createElement("p")
+      let pcontent = document.createTextNode(chat["messages"][i]["message"])
+
+      p.appendChild(pcontent)
+      div4.appendChild(p)
+
+      div2.appendChild(div4)
+
+      div.appendChild(img)
+      div.appendChild(div2)
+
+      chatwindow.appendChild(div)
+    }
+  }
+
+  inp.addEventListener("change", (e) => {
+    input.setValue(e.target.value)
+  })
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    channel = chats.Value()[channelid.Value()]
+    await fetch(`/api/send_message?channel=${channelid.Value()}&message=${input.Value()}`)
+
+    inp.value = ""
+    input.setValue("")
+
+  })
+
+  queryInput.addEventListener("change", (e) => {
+    queryinput.setValue(e.target.value)
+  })
+
+  queryName.addEventListener("change", (e) => {
+    queryname.setValue(e.target.value)
+  })
+
+  queryForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    console.log("helo")
+
+    channelid.setValue(await (await fetch(`/api/create_channel?name=${queryname.Value()}&message=${queryinput.Value()}`)).json)
+
+    queryInput.value = ""
+    queryinput.setValue("")
+    queryName.value = ""
+    queryname.setValue("")
+
+    handleQuery(close)
+
+
+
+  })
+
+  function handleQuery(state) {
+    if (state == "open") {
+      createQuery.showModal()
+    } else {
+      createQuery.close()
+    }
+  }
+</script>

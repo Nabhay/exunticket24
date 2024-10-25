@@ -48,9 +48,6 @@ tailwind = "<script>eval(atob(`" + base64.b64encode(open("public/tailwind.js").r
 # Home route
 @app.get("/")
 def home():
-    chat_window = open('components/chat_window.html').read()
-    previous_chats = open('components/previous_chats.html').read()
-    channels = open('components/channels.html').read()
     return render("index", locals() | globals())
 
 # Get sum route
@@ -71,13 +68,14 @@ def get_sum():
         channels = json.loads(channels_response.text)
 
         channels_hash = {}
-        for channel_id, channel_data in channels.items():
+        for channel in channels:
             try:
-                channel_info = json.loads(channel_data)
-                if channel_id in user_access or channel_info['type'] == 'announcements':
-                    channels_hash[channel_info['name']] = hashlib.sha256(channel_data.encode('utf-8')).hexdigest()
+
+                channel_info = json.loads(channel[1])
+                if str(channel[0]) in str(user_access) or channel_info['type'] == 'announcements':
+                    channels_hash[channel[0]] = hashlib.sha256(channel[1].encode('utf-8')).hexdigest()
             except json.JSONDecodeError:
-                print(f"Error decoding JSON for channel data: {channel_data}")
+                print(f"Error decoding JSON for channel data: {channel[1]}")
                 continue
 
         return json.dumps(channels_hash), 200
@@ -94,7 +92,7 @@ def get_chats():
         if not user:
             return json.dumps({"error": "Email parameter is required."}), 400
 
-        channel_ids = request.args.getlist('channel_ids')
+        channel_ids = json.loads(request.args.get('channel_ids'))
 
         user_access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
         if user_access_response.status_code != 200:
@@ -107,13 +105,13 @@ def get_chats():
         channels = json.loads(channels_response.text)
 
         user_channels = {}
-        for channel_id, channel_data in channels.items():
+        for channel in channels:
             try:
-                channel_info = json.loads(channel_data)
-                if (channel_id in user_access or channel_info['type'] == 'announcements') and channel_id in channel_ids:
-                    user_channels[channel_info['name']] = channel_data
+                channel_info = json.loads(channel[1])
+                if str(channel[0]) in str(channel_ids) and (str(channel[0]) in str(user_access) or channel_info['type'] == 'announcements'):
+                    user_channels[channel[0]] = channel_info
             except json.JSONDecodeError:
-                print(f"Error decoding JSON for channel data: {channel_data}")
+                print(f"Error decoding JSON for channel data: {channel[1]}")
                 continue
 
         return json.dumps(user_channels), 200
@@ -124,7 +122,7 @@ def get_chats():
 
 # Send message route
 @app.get('/api/send_message')
-async def send_message_user():
+def send_message_user():
     user = request.cookies.get('email')
     message = request.args.get('message')
     channel_id = request.args.get('channel')
@@ -141,8 +139,7 @@ async def send_message_user():
         access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
         if access_response.status_code != 200:
             return json.dumps({"error": "Failed to fetch user access"}), 500
-
-        allowed_channels = access_response.json()
+        allowed_channels = str(access_response.content)
         if channel_id not in allowed_channels:
             return json.dumps({'error': 'User does not have access to this channel'}), 403
 
