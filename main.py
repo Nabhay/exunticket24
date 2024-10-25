@@ -7,7 +7,6 @@ import requests, hashlib
 import docs
 import resend
 import aiohttp
-import asyncio
 import os
 
 app = Quart(__name__)
@@ -197,7 +196,7 @@ def get_chats():
         return json.dumps({"error": str(e)}), 500
 
 # Send message route
-@app.get('/send_message')
+@app.get('/api/send_message')
 async def send_message_user():
     user = request.cookies.get('email')
     message = request.args.get('message')
@@ -246,7 +245,7 @@ async def send_message_user():
         print(f"Error communicating with the backer backend: {e}")
         return json.dumps({"error": "Failed to communicate with the backer backend"}), 500
 
-@app.get('/create_channel')
+@app.get('/api/create_channel')
 def create_channel_api():
     user = request.cookies.get('email')
     name = request.args.get('name')
@@ -292,7 +291,7 @@ def create_channel_api():
         print(f"Error communicating with the backer backend: {e}")
         return json.dumps({"error": "Failed to communicate with backer backend"}), 500
 
-@app.get('/toggle_ai')
+@app.get('/api/toggle_ai')
 def toggle_ai_api():
     user = request.cookies.get('email')  
     channel = request.args.get('channel')  

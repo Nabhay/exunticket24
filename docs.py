@@ -142,21 +142,21 @@ def get_google_sheet_content(sheet_id, sheets_service):
 
 # Main function to process all Google Docs and Sheets in the folder
 def process_docs_and_sheets_in_folder(folder_id):
+    data = ''
     files = list_google_docs_and_sheets_in_folder(drive_service, folder_id)
     for file in files:
         file_id = file['id']
         file_name = file['name']
         file_type = file['mimeType']
-        
-        print(f'Processing file: {file_name} ({file_type})')
-        
+               
         # Process Google Docs
         if file_type == 'application/vnd.google-apps.document':
             doc_content = get_google_doc_content(file_id, docs_service)
             markdown_content = convert_to_markdown(doc_content)
-            print(f'Markdown for {file_name}:\n{markdown_content}\n')
+            data.append(markdown_content, '\n')
         
         # Process Google Sheets
         elif file_type == 'application/vnd.google-apps.spreadsheet':
             sheet_content = get_google_sheet_content(file_id, sheets_service)
-            print(f'JSON content for {file_name}:\n{sheet_content}\n')
+            data.append(sheet_content, '\n')
+        return data
