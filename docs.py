@@ -15,22 +15,65 @@ sheets_service = build('sheets', 'v4', credentials=credentials)
 
 # List all Google Docs and Sheets in a folder
 def list_google_docs_and_sheets_in_folder(service, folder_id):
-    query = f"'{folder_id}' in parents and (mimeType='application/vnd.google-apps.document' or mimeType='application/vnd.google-apps.spreadsheet')"
-    results = service.files().list(
-        q=query,
-        pageSize=100,
-        fields="nextPageToken, files(id, name, mimeType)"
-    ).execute()
-    items = results.get('files', [])
-    
-    return items
+    try:
+        query = f"'{folder_id}' in parents and (mimeType='application/vnd.google-apps.document' or mimeType='application/vnd.google-apps.spreadsheet')"
+        results = service.files().list(
+            q=query,
+            pageSize=100,
+            fields="nextPageToken, files(id, name, mimeType)"
+        ).execute()
+        items = results.get('files', [])
+        return items
+    except Exception as e:
+        return []
 
 # Get content of Google Doc and convert it to Markdown
 def get_google_doc_content(doc_id, docs_service):
-    document = docs_service.documents().get(documentId=doc_id).execute()
-    return document
+    try:
+        document = docs_service.documents().get(documentId=doc_id).execute()
+        return document
+    except Exception as e:
+        return {}
 
-# Convert text with all styles to markdown
+# Convert Google Doc to markdown
+def convert_to_markdown(doc_content):
+    markdown = ''
+    if not doc_content:
+        return markdown
+    
+    for element in doc_content.get('body', {}).get('content', []):
+        if 'paragraph' in element:
+            markdown += convert_paragraph_to_markdown(element['paragraph'])
+        elif 'table' in element:
+            markdown += convert_table_to_markdown(element['table']) + '\n'
+    
+    return markdown
+
+def convert_table_to_markdown(table):
+    markdown = ""
+    rows = table['tableRows']
+    
+    # Extract table content and convert to Markdown
+    for row_idx, row in enumerate(rows):
+        row_data = []
+        for cell in row['tableCells']:
+            cell_content = ''
+            for content in cell['content']:
+                if 'paragraph' in content:
+                    for element in content['paragraph']['elements']:
+                        if 'textRun' in element:
+                            cell_content += convert_text_run_to_markdown(element['textRun'])
+            row_data.append(cell_content)
+        
+        # Add table row to markdown
+        markdown += "| " + " | ".join(row_data) + " |\n"
+        
+        # Add header separator after the first row
+        if row_idx == 0:
+            markdown += "| " + " | ".join(['---'] * len(row_data)) + " |\n"
+    
+    return markdown
+
 def convert_text_run_to_markdown(text_run):
     text = text_run['content']
     text_style = text_run.get('textStyle', {})
@@ -58,7 +101,7 @@ def convert_text_run_to_markdown(text_run):
     
     return text
 
-# Convert paragraph with different styles
+
 def convert_paragraph_to_markdown(paragraph):
     markdown = ''
     
@@ -86,77 +129,42 @@ def convert_paragraph_to_markdown(paragraph):
             indent_level = bullet.get('nestingLevel', 0)
             marker = "-" if indent_level == 0 else "1."
             markdown += " " * (indent_level * 2) + f"{marker} "
-
     # Convert text elements inside the paragraph
     for element in paragraph['elements']:
         if 'textRun' in element:
             markdown += convert_text_run_to_markdown(element['textRun'])
-
     markdown += '\n\n'
-    return markdown
-
-# Function to handle tables and convert them to markdown format
-def convert_table_to_markdown(table):
-    markdown = ""
-    rows = table['tableRows']
-    
-    # Extract table content and convert to Markdown
-    for row_idx, row in enumerate(rows):
-        row_data = []
-        for cell in row['tableCells']:
-            cell_content = ''
-            for content in cell['content']:
-                if 'paragraph' in content:
-                    for element in content['paragraph']['elements']:
-                        if 'textRun' in element:
-                            cell_content += convert_text_run_to_markdown(element['textRun'])
-            row_data.append(cell_content)
-        
-        # Add table row to markdown
-        markdown += "| " + " | ".join(row_data) + " |\n"
-        
-        # Add header separator after the first row
-        if row_idx == 0:
-            markdown += "| " + " | ".join(['---'] * len(row_data)) + " |\n"
-    
-    return markdown
-
-# Convert document to markdown including tables, lists, headings, and formatting
-def convert_to_markdown(doc_content):
-    markdown = ''
-    for element in doc_content['body']['content']:
-        # Handle paragraphs (text content)
-        if 'paragraph' in element:
-            markdown += convert_paragraph_to_markdown(element['paragraph'])
-        
-        # Handle tables
-        elif 'table' in element:
-            markdown += convert_table_to_markdown(element['table']) + '\n'
-    
     return markdown
 
 # Get content of Google Sheet and return JSON
 def get_google_sheet_content(sheet_id, sheets_service):
-    sheet = sheets_service.spreadsheets().get(spreadsheetId=sheet_id).execute()
-    return sheet
+    try:
+        sheet = sheets_service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        return sheet
+    except Exception as e:
+        return {}
 
 # Main function to process all Google Docs and Sheets in the folder
 def process_docs_and_sheets_in_folder(folder_id):
     data = ''
     files = list_google_docs_and_sheets_in_folder(drive_service, folder_id)
+    
     for file in files:
         file_id = file['id']
         file_name = file['name']
         file_type = file['mimeType']
-               
+        
         # Process Google Docs
         if file_type == 'application/vnd.google-apps.document':
             doc_content = get_google_doc_content(file_id, docs_service)
-            markdown_content = convert_to_markdown(doc_content)
-            data.append(markdown_content, '\n')
+            if doc_content:
+                markdown_content = convert_to_markdown(doc_content)
+                data += markdown_content + '\n'
         
         # Process Google Sheets
         elif file_type == 'application/vnd.google-apps.spreadsheet':
             sheet_content = get_google_sheet_content(file_id, sheets_service)
-            data.append(sheet_content, '\n')
-        return data
+            if sheet_content:
+                data += str(sheet_content) + '\n'
+    
+    return data

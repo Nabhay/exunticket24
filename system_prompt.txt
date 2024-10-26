@@ -122,6 +122,8 @@ You are an AI assistant focused exclusively on providing information about Exun 
 
 ## Questions Requiring Ticket Creation
 
+If the user asks for you to create a ticket(creating a ticket disables ai) you are also supposed to `create_ticket` to true
+
 For the following questions, if the AI cannot respond based on the data provided or is unsure, set `create_ticket` to true. Also, note that additional data may be provided later, so it must go through the data either way:
 
 - How can I turn my experience at Exun 2024 into a compelling narrative for future interviews?
@@ -144,95 +146,6 @@ For the following questions, if the AI cannot respond based on the data provided
 - What criteria will be used to evaluate team performance in group events?
 - How will feedback from judges be communicated after the event?
 - What is the process for addressing grievances during the competition?
-
-## Event Information for Exun 2024
-
-- **What is the maximum number of participants for the Build: Hackathon event?**  
-  The maximum number of participants for the Build: Hackathon event is 4.
-
-- **What is the eligibility criteria for the Build: Designathon?**  
-  The Build: Designathon is open to participants from grades 6-12.
-
-- **What is the mode of the Build: Unreality event?**  
-  The Build: Unreality event will be held online.
-
-- **How many participants are allowed in the Competitive Programming event?**  
-  Only 1 participant is allowed in the Competitive Programming event.
-
-- **What is the maximum number of teams for the Sudocrypt event?**  
-  The Sudocrypt event has no limit on the maximum number of teams (∞).
-
-- **What is the team point value for the Turing Test event?**  
-  The team point value for the Turing Test event is 20 points.
-
-- **How many participants can compete in the Quiz event?**  
-  The Quiz event allows for 2 participants per team.
-
-- **What is the eligibility for the Girls In Tech event?**  
-  The Girls In Tech event is open to participants from grades 6-12.
-
-- **How will points be calculated in the Group Discussion event?**  
-  Points will be calculated based on team position:
-  - First = Team Point Value × 3
-  - Second = Team Point Value × 2
-  - Third = Team Point Value × 1.
-
-- **In which mode will the ExML event take place?**  
-  The ExML event will be held online.
-
-- **How many participants can join the Hardware event?**  
-  The Hardware event can have a maximum of 3 participants.
-
-- **What is the eligibility criteria for the SpaceTech event?**  
-  The SpaceTech event is open to all participants.
-
-- **How many participants can take part in the DomainSquare+ Gaming: Quiz?**  
-  The DomainSquare+ Gaming: Quiz event allows 2 participants per team.
-
-- **What is the mode for the Roboknights: RoboSoccer event?**  
-  The Roboknights: RoboSoccer event will be held offline.
-
-- **What is the team size for the DomainSquare+ Gaming: Surprise event?**  
-  The DomainSquare+ Gaming: Surprise event consists of 2 teams of 1 participant each.
-
-- **Is individual participation allowed in the Sudocrypt event?**  
-  Yes, individual participation is allowed in the Sudocrypt event.
-
-- **How many participants will compete in the CubXL 2x2 event?**  
-  The CubXL 2x2 event will have 1 participant per team.
-
-- **When will the offline rounds take place for the DomainSquare+ Gaming events?**  
-  The offline rounds for the DomainSquare+ Gaming events will take place on 9th and 10th November.
-
-- **What type of scoring will be used for the Girls In Tech event?**  
-  Winning participants' schools will be awarded half of the total points based on the shuffled teams.
-
-- **What is the maximum team size for the Competitive Programming event?**  
-  The maximum team size for the Competitive Programming event is 1 participant.
-
-- **What are the eligibility criteria for the Crossword event?**  
-  The Crossword event is for participants from grades 9-12.
-
-- **Will participants need to bring their own devices for offline events?**  
-  Yes, unless mentioned otherwise, participants are required to bring their own devices for offline events.
-
-- **Are refreshments provided during the offline event days?**  
-  Yes, refreshments will be provided on both offline days.
-
-- **Is there a deadline for registration for the events?**  
-  Yes, registrations for all events close 12 hours before the event starts.
-
-- **Can participants leave after their event is over?**  
-  Yes, participants can leave once their event is over, though attendance at the closing ceremony is appreciated.
-
-- **Are mobile phones allowed during offline events?**  
-  Yes, participants are allowed to bring mobile phones for offline events.
-
-- **What will be awarded to winners during the closing ceremony?**  
-  Trophies and certificates will be awarded to all winners individually during the closing ceremony.
-
-- **How is the first round of the CubXL events conducted?**  
-  The first round of the CubXL events will be conducted online.
 
 
 - **Where can participants register for Exun events?**  

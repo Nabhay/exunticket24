@@ -54,7 +54,7 @@ async def send_message_ai():
 
         # Combine system prompt and Google Docs content for system instruction
         system_instruction = (
-            f"{system_prompt}\n\n{google_docs_content}\n\n"
+            f"{system_prompt}\n\nTreat the following information as very important\n\n{google_docs_content}\n\n"
             "Please respond strictly in JSON format with this schema:\n"
             "{\n"
             '  "response": "(string containing the answer)",\n'
