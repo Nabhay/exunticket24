@@ -49,14 +49,15 @@ tailwind = "<script>eval(atob(`" + base64.b64encode(open("public/tailwind.js").r
 # Home route
 @app.get("/")
 def home():
-    validity()
+    user = request.cookies.get('email')
+    if type(user) == None or not authd():
+        return redirect('https://reg.exunclan.com/login?redirect=queries')
     return render("index", locals() | globals())
 
 # Get sum route
 @app.get('/get_sum')
 def get_sum():
     try:
-        validity()
         user = request.cookies.get('email')
         user_access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
         if user_access_response.status_code != 200:
@@ -71,7 +72,6 @@ def get_sum():
         channels_hash = {}
         for channel in channels:
             try:
-
                 channel_info = json.loads(channel[1])
                 if str(channel[0]) in str(user_access) or channel_info['type'] == 'announcements':
                     channels_hash[channel[0]] = hashlib.sha256(channel[1].encode('utf-8')).hexdigest()
@@ -89,10 +89,8 @@ def get_sum():
 @app.get('/get_chats')
 def get_chats():
     try:
-        validity()
         user = request.cookies.get('email')
         channel_ids = json.loads(request.args.get('channel_ids'))
-
         user_access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
         if user_access_response.status_code != 200:
             return json.dumps({"error": "Failed to fetch user access."}), 500
@@ -122,7 +120,6 @@ def get_chats():
 # Send message route
 @app.get('/api/send_message')
 def send_message_user():
-    validity()
     user = request.cookies.get('email')
     message = request.args.get('message')
     channel_id = request.args.get('channel')
@@ -176,8 +173,6 @@ def send_message_user():
 
 @app.get('/api/create_channel')
 def create_channel_api():
-
-    validity()
     user = request.cookies.get('email')
     name = request.args.get('name')
     message = request.args.get('message')
@@ -221,7 +216,6 @@ def create_channel_api():
 
 @app.get('/api/toggle_ai')
 def toggle_ai_api():
-    validity()
     user = request.cookies.get('email')  
     channel = request.args.get('channel')  
     toggle = request.args.get('toggle')     
@@ -229,7 +223,13 @@ def toggle_ai_api():
         return json.dumps({"error": "Valid channel ID is required"}), 400
     if toggle not in ["true", "false"]:
         return json.dumps({"error": "Toggle value must be 'true' or 'false'"}), 400
-
+    user_access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
+    access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
+    if access_response.status_code != 200:
+        return json.dumps({"error": "Failed to fetch user access"}), 500
+    allowed_channels = str(access_response.content)
+    if channel not in allowed_channels:
+        return json.dumps({'error': 'User does not have access to this channel'}), 403 
     try:
         toggle_params = {
             'channel': channel,
@@ -255,7 +255,7 @@ def toggle_ai_api():
 def auth():
     auth_token = request.args.get('auth_token')
     email = request.args.get('email')
-    resp = make_response('Setting the cookie')  
+    resp = make_response(redirect('/'))  
     resp.set_cookie('email', email)
     resp.set_cookie('auth_token', auth_token)
     return resp 
@@ -275,10 +275,5 @@ def auth_token(a):
         a = a.encode()+salt.encode()
     return hashlib.sha256(a).hexdigest()
 
-
-def validity():
-    email = request.args.get('email')
-    if type(email) != str or not re.match(r"^[\w\.-]+@[a-zA-Z\d\.-]+\.[a-zA-Z]{2,}$", email) or not authd():
-        return redirect('https://reg.exunclan.com/login?redirect=queries')
 
 app.run(host="127.0.0.1", port=int(sys.argv[1]))
