@@ -255,7 +255,8 @@ def toggle_ai_api():
 def auth():
     auth_token = request.args.get('auth_token')
     email = request.args.get('email')
-    requests.get(f'{db_ip}/set', params={'table':'user_access', 'key': email, 'value':[]})
+    if requests.get(f'{db_ip}/get', params={'table':'user_access', 'key': email}).status_code == 204:
+        requests.get(f'{db_ip}/set', params={'table':'user_access', 'key': email, 'value':'[]'})
     resp = make_response(redirect('/'))  
     resp.set_cookie('email', email)
     resp.set_cookie('auth_token', auth_token)
