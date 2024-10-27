@@ -1,4 +1,4 @@
-from flask import request, redirect, Response
+from flask import request, redirect, Response, make_response
 from monster import render, Flask, escapeString
 import sys, json
 import hashlib, base64
@@ -9,6 +9,7 @@ import resend
 import aiohttp
 import os
 import tracemalloc
+import re
 
 tracemalloc.start()
 
@@ -48,15 +49,15 @@ tailwind = "<script>eval(atob(`" + base64.b64encode(open("public/tailwind.js").r
 # Home route
 @app.get("/")
 def home():
+    validity()
     return render("index", locals() | globals())
 
 # Get sum route
 @app.get('/get_sum')
 def get_sum():
     try:
+        validity()
         user = request.cookies.get('email')
-        if not user:
-            return json.dumps({"error": "Email parameter is required."}), 400
         user_access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
         if user_access_response.status_code != 200:
             return json.dumps({"error": "Failed to fetch user access."}), 500
@@ -88,10 +89,8 @@ def get_sum():
 @app.get('/get_chats')
 def get_chats():
     try:
+        validity()
         user = request.cookies.get('email')
-        if not user:
-            return json.dumps({"error": "Email parameter is required."}), 400
-
         channel_ids = json.loads(request.args.get('channel_ids'))
 
         user_access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
@@ -123,12 +122,10 @@ def get_chats():
 # Send message route
 @app.get('/api/send_message')
 def send_message_user():
+    validity()
     user = request.cookies.get('email')
     message = request.args.get('message')
     channel_id = request.args.get('channel')
-
-    if not user:
-        return json.dumps({"error": "User email not found in cookies"}), 400
     if not message:
         return json.dumps({"error": "Message is required"}), 400
     if not channel_id or not channel_id.isdigit():
@@ -179,12 +176,11 @@ def send_message_user():
 
 @app.get('/api/create_channel')
 def create_channel_api():
+
+    validity()
     user = request.cookies.get('email')
     name = request.args.get('name')
     message = request.args.get('message')
-
-    if not user:
-        return json.dumps({"error": "User email not found in cookies"}), 400
     if not name:
         return json.dumps({"error": "Channel name is required"}), 400
     if not message:
@@ -225,13 +221,10 @@ def create_channel_api():
 
 @app.get('/api/toggle_ai')
 def toggle_ai_api():
+    validity()
     user = request.cookies.get('email')  
     channel = request.args.get('channel')  
     toggle = request.args.get('toggle')     
-    
-    
-    if not user:
-        return json.dumps({"error": "User email not found in cookies"}), 400
     if not channel or not channel.isdigit():
         return json.dumps({"error": "Valid channel ID is required"}), 400
     if toggle not in ["true", "false"]:
@@ -256,5 +249,36 @@ def toggle_ai_api():
     except requests.exceptions.RequestException as e:
         print(f"Error communicating with the backer backend: {e}")
         return json.dumps({"error": "Failed to communicate with the backend."}), 500
+
+
+@app.get('/auth')
+def auth():
+    auth_token = request.args.get('auth_token')
+    email = request.args.get('email')
+    resp = make_response('Setting the cookie')  
+    resp.set_cookie('email', email)
+    resp.set_cookie('auth_token', auth_token)
+    return resp 
+
+def authd():
+    try:
+        if "auth_token" not in request.cookies or "email" not in request.cookies:
+            return False
+        if request.cookies["auth_token"]==auth_token(request.cookies["email"]):
+            return True
+        return False
+    except:
+        return False
+    
+def auth_token(a):
+    if type(a) == str:
+        a = a.encode()+salt.encode()
+    return hashlib.sha256(a).hexdigest()
+
+
+def validity():
+    email = request.args.get('email')
+    if type(email) != str or not re.match(r"^[\w\.-]+@[a-zA-Z\d\.-]+\.[a-zA-Z]{2,}$", email) or not authd():
+        return redirect('https://reg.exunclan.com/login?redirect=queries')
 
 app.run(host="127.0.0.1", port=int(sys.argv[1]))
