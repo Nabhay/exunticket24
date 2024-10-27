@@ -79,8 +79,6 @@ async def send_message_ai():
         # Generate content using the GenerativeModel with the defined prompt
         response = model.generate_content(prompt)
         reply = response.text.strip("`json")
-        # Log the raw response
-        print("Raw response:", reply)
 
         # Attempt to parse the JSON response
         try:
@@ -112,4 +110,4 @@ async def send_message_ai():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5001)
+    app.run(host="127.0.0.1", port=7000)

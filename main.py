@@ -140,6 +140,9 @@ def send_message_user():
         # Step 2: Send the message via the backer backend
         send_response = requests.get(f'{db_ip}/send_message', params={'channel': channel_id, 'message': message, 'user': user})
         
+        if send_response.status_code == 429:
+            return 'Rate limit exceede'
+
         if send_response.status_code == 200:
             send_result = send_response.json()
 
@@ -148,13 +151,11 @@ def send_message_user():
                 channels_response = requests.get(f'{db_ip}/get', params={'table': 'channels', 'key': channel_id})
                 if channels_response.status_code == 200:
                     channel_data = json.loads(channels_response.text)
-
                     # Step 4: Check if AI is enabled for the channel
-                    if channel_data.get('AI_enabled') == True:
-                        # Call the Flask AI service
-                        ai_response = requests.post(
-                            f'http://{ai_ip}/send_message_ai',
-                            json={"channel_id": channel_id, "message": message}
+                    if channel_data.get('AI_enabled') == 'true':
+                        ai_response = requests.get(
+                            f'{ai_ip}/send_message_ai',
+                            params={"channel_id": channel_id, "message": message}
                         )
 
                         if ai_response.status_code == 200:
@@ -223,7 +224,6 @@ def toggle_ai_api():
         return json.dumps({"error": "Valid channel ID is required"}), 400
     if toggle not in ["true", "false"]:
         return json.dumps({"error": "Toggle value must be 'true' or 'false'"}), 400
-    user_access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
     access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
     if access_response.status_code != 200:
         return json.dumps({"error": "Failed to fetch user access"}), 500
@@ -255,6 +255,7 @@ def toggle_ai_api():
 def auth():
     auth_token = request.args.get('auth_token')
     email = request.args.get('email')
+    requests.get(f'{db_ip}/set', params={'table':'user_access', 'key': email, 'value':[]})
     resp = make_response(redirect('/'))  
     resp.set_cookie('email', email)
     resp.set_cookie('auth_token', auth_token)

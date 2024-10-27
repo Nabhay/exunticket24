@@ -22,7 +22,7 @@ conn_table = {"channels": channels, "user_access": user_access}
 
 user_rate_limit = {}
 
-RATE_LIMIT_WINDOW = 60  # Time window in seconds (e.g., 1 minute)
+RATE_LIMIT_WINDOW = 10  # Time window in seconds (e.g., 1 minute)
 RATE_LIMIT_MAX_MESSAGES = 2  # Maximum messages allowed within the window
 
 

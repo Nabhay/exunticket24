@@ -18,4 +18,4 @@ user_access = litedb.get_conn("user_access")
 
 conn_table = {"channels": channels, "user_access": user_access}
 
-conn_table["user_access"].set("me", json.dumps([]))
+conn_table["user_access"].set("nabhay.khanna@gmail.com", json.dumps([]))
