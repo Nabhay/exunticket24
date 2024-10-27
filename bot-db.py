@@ -179,7 +179,7 @@ async def get_api():
     table = request.args.get("table")
     key = request.args.get("key")
     if conn_table[table].get(key) == None:
-        return 204
+        return "Error", 204
     return conn_table[table].get(key)
 
 
