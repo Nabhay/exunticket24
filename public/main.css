@@ -24,3 +24,7 @@ body {
     "Helvetica Neue",
     sans-serif;
 }
+
+#chatwindow {
+  scroll-behavior: smooth;
+}
