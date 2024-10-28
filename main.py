@@ -118,16 +118,7 @@ def get_chats():
         return json.dumps({"error": str(e)}), 500
 
 # Send message route
-@app.get('/api/send_message')
-def send_message_user():
-    user = request.cookies.get('email')
-    message = request.args.get('message')
-    channel_id = request.args.get('channel')
-    if not message:
-        return json.dumps({"error": "Message is required"}), 400
-    if not channel_id or not channel_id.isdigit():
-        return json.dumps({"error": "Valid channel ID is required"}), 400
-
+def send_message_to_channel(user, message, channel_id):
     try:
         # Step 1: Check if the user has access to the channel
         access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
@@ -141,7 +132,7 @@ def send_message_user():
         send_response = requests.get(f'{db_ip}/send_message', params={'channel': channel_id, 'message': message, 'user': user})
         
         if send_response.status_code == 429:
-            return 'Rate limit exceede'
+            return json.dumps({"error": "Rate limit exceeded"}), 429
 
         if send_response.status_code == 200:
             send_result = send_response.json()
@@ -160,7 +151,7 @@ def send_message_user():
                         )
 
                         if ai_response.status_code == 200:
-                            return ai_response.json(), 200
+                            return ai_response, 200
                         else:
                             return json.dumps({"error": "Failed to contact AI service"}), 500
 
@@ -170,8 +161,22 @@ def send_message_user():
             return send_response.json(), send_response.status_code
 
     except requests.exceptions.RequestException as e:
-        print(f"Error communicating with the backer backend: {e}")
-        return json.dumps({"error": "Failed to communicate with the backer backend"}), 500
+        print(f"Error communicating with the backend: {e}")
+        return {"error": "Failed to communicate with the backend"}, 500
+
+# API endpoint that calls the helper function
+@app.get('/api/send_message')
+def send_message_user():
+    user = request.cookies.get('email')
+    message = request.args.get('message')
+    channel_id = request.args.get('channel')
+
+    if not message:
+        return {"error": "Message is required"}, 400
+    if not channel_id or not channel_id.isdigit():
+        return {"error": "Valid channel ID is required"}, 400
+
+    return send_message_to_channel(user, message, channel_id)
 
 @app.get('/api/create_channel')
 def create_channel_api():
@@ -201,7 +206,7 @@ def create_channel_api():
                     'message': message,
                     'user': user
                 }
-                send_response = requests.get(f'{main_ip}/api/send_message', params=send_params)
+                send_response = send_message_to_channel(user=user, message=message, channel_id=channel_id)
 
                 if send_response.status_code == 200:
                     return json.dumps({"success": True, "message": "Channel created and message sent successfully."}), 200
