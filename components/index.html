@@ -1,3 +1,4 @@
+<py>return tailwind</py>
 <div class="flex">
   <div class="w-[30%] flex flex-col justify-between">
     <div class="w-full h-full bg-black/[0.045]">
@@ -15,8 +16,8 @@
     </div>
   </div>
   <div class="flex flex-col h-screen w-full">
-    <div class="flex justify-between pr-10 items-center">
-      <div class="p-5 text-2xl">Chat Window</div>
+    <div class="p-4 flex justify-between pr-10 items-center shadow-b shadow-sm">
+      <div class="text-2xl">Chat Window</div>
       <div class="flex justify-evenly gap-5">
         Enable Ai
         <label class="items-center cursor-pointer">
@@ -44,10 +45,9 @@
       </button>
     </form>
   </div>
-  <py>return tailwind</py>
 </div>
 
-<dialog id="createQuery" class="w-[30vw] h-[30vh] p-5 rounded-xl border border-black/10">
+<dialog id="createQuery" class="w-[30vw] h-[35vh] p-5 rounded-xl border border-black/10">
   <h1 class="font-bold text-xl">Create your query</h1>
   <button class="absolute top-5 right-5 h-6 w-6 cursor-pointer" onclick="handleQuery('close')">
     ✕
@@ -241,6 +241,8 @@
 
       chatwindow.appendChild(div)
     }
+
+    chatwindow.scrollTo(0, chatwindow.scrollHeight + 100)
   }
 
   inp.addEventListener("change", (e) => {
