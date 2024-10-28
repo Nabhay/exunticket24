@@ -3,9 +3,6 @@
     <div class="w-full h-full bg-black/[0.045]">
       <div class="p-5 font-bold border-b border-b-black/10">Channels</div>
       <div class="p-5 overflow-y-auto w-full flex flex-col" id="announcements">
-        <a href="#" class="hover:bg-black/[0.05] p-2 rounded">Announcements</a>
-        <a href="#" class="hover:bg-black/[0.05] p-2 rounded">General</a>
-        <a href="#" class="hover:bg-black/[0.05] p-2 rounded">Build</a>
       </div>
     </div>
     <div class="w-full h-full bg-black/[0.045]">
@@ -18,21 +15,33 @@
     </div>
   </div>
   <div class="flex flex-col h-screen w-full">
-    <div class="flex justify-between pr-10">
+    <div class="flex justify-between pr-10 items-center">
       <div class="p-5 text-2xl">Chat Window</div>
-      <input type="checkbox"></input>
+      <div class="flex justify-evenly gap-5">
+        Enable Ai
+        <label class="items-center cursor-pointer">
+          <input type="checkbox" value="" class="sr-only peer"></input>
+          <div
+            class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600">
+          </div>
+        </label>
+      </div>
     </div>
     <div class="flex-grow overflow-y-auto" id="chatwindow">
       <div class="chat chat-start hover:bg-black/[0.05] flex gap-5 p-5 items-center">
-
-        <h1 class="font-bold text-lg">
-          No Messages
-        </h1>
+        No Messages
       </div>
     </div>
-    <form class="w-full flex justify-between px-10 py-4" id="form">
-      <input type="text" placeholder="Type your message" class="rounded-3xl p-4 flex-grow bg-black/[0.045]"
-        id="input"></input>
+    <form class="w-full flex justify-between px-10 py-4 gap-5" id="form">
+      <input type="text" placeholder="Type your message" class="rounded-2xl p-4 flex-grow bg-black/[0.045]" id="input">
+      </input>
+      <button type="submit" class="bg-blue-500 text-white p-4 px-5 rounded-2xl">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-4 w-4">
+          <path
+            d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576zm6.787-8.201L1.591 6.602l4.339 2.7">
+          </path>
+        </svg>
+      </button>
     </form>
   </div>
   <py>return tailwind</py>
@@ -74,11 +83,14 @@
   async function getCheckSum() {
     checksum.setValue(await (await fetch("/get_sum")).json())
     let outdatedChannels = []
+    console.log(checksum.Value())
     for (let id in checksum.Value()) {
       if (checksum.Value()[id] != prevchecksum.Value()[id]) {
         outdatedChannels.push(id)
       }
     }
+
+    console.log(outdatedChannels)
     if (outdatedChannels.length > 0) {
       let updatedChats = await (await fetch(`/get_chats?channel_ids=[${outdatedChannels}]`)).json()
       let newChats = chats.Value()
@@ -105,9 +117,26 @@
         a.onclick = function () {handleClick(chat)}
         a.appendChild(text)
 
+        if (channel["type"] == "restricted-announcements") {
+          announcements.appendChild(a)
+        }
+      }
+
+      for (let chat in chats.Value()) {
+        let channel = chats.Value()[chat]
+
+        let a = document.createElement("button")
+        let text = document.createTextNode(channel["name"])
+
+        a.className = "hover:bg-black/[0.05] p-2 rounded text-start"
+        a.href = "#"
+        a.onclick = function () {handleClick(chat)}
+        a.appendChild(text)
+
         if (channel["type"] == "announcements") {
           announcements.appendChild(a)
-        } else {
+        }
+        if (channel["type"] == "chat") {
           queries.appendChild(a)
         }
       }
@@ -136,21 +165,22 @@
     let chat = chats.Value()[channelid.Value()]
     chatwindow.innerHTML = ""
 
-    console.log(chat)
+    if (chat["type"] == "announcements" || chat["type"] == "restricted-announcements") {
+      inp.className = "rounded-3xl p-4 flex-grow bg-black/[0.045] cursor-not-allowed"
+      inp.disabled = true
+    } else {
+      inp.className = "rounded-3xl p-4 flex-grow bg-black/[0.045]"
+      inp.disabled = false
+    }
 
     if (chat["messages"].length < 1) {
 
       let div = document.createElement("div")
       div.className = "chat chat-start hover:bg-black/[0.05] flex gap-5 p-5 items-center"
 
-      let h1 = document.createElement("h1")
-      h1.className = "font-bold text-lg"
+      let divcontent = document.createTextNode("No Messages")
 
-      let h1content = document.createTextNode("No Messages")
-      h1.appendChild(h1content)
-
-
-      div.appendChild(h1)
+      div.appendChild(divcontent)
       chatwindow.appendChild(div)
 
     }
@@ -203,11 +233,11 @@
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    inp.value = ""
 
     channel = chats.Value()[channelid.Value()]
     await fetch(`/api/send_message?channel=${channelid.Value()}&message=${input.Value()}`)
 
-    inp.value = ""
     input.setValue("")
 
   })
@@ -222,7 +252,6 @@
 
   queryForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    console.log("helo")
 
     channelid.setValue(await (await fetch(`/api/create_channel?name=${queryname.Value()}&message=${queryinput.Value()}`)).json)
 
