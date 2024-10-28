@@ -20,7 +20,7 @@
       <div class="flex justify-evenly gap-5">
         Enable Ai
         <label class="items-center cursor-pointer">
-          <input type="checkbox" value="" class="sr-only peer"></input>
+          <input type="checkbox" value="" class="sr-only peer" id="checkbox"></input>
           <div
             class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600">
           </div>
@@ -79,18 +79,17 @@
   let queryForm = document.getElementById("queryForm");
   let queryInput = document.getElementById("queryInput");
   let queryName = document.getElementById("queryName");
+  let checkbox = document.getElementById("checkbox")
 
   async function getCheckSum() {
     checksum.setValue(await (await fetch("/get_sum")).json())
     let outdatedChannels = []
-    console.log(checksum.Value())
     for (let id in checksum.Value()) {
       if (checksum.Value()[id] != prevchecksum.Value()[id]) {
         outdatedChannels.push(id)
       }
     }
 
-    console.log(outdatedChannels)
     if (outdatedChannels.length > 0) {
       let updatedChats = await (await fetch(`/get_chats?channel_ids=[${outdatedChannels}]`)).json()
       let newChats = chats.Value()
@@ -112,10 +111,11 @@
         let a = document.createElement("button")
         let text = document.createTextNode(channel["name"])
 
-        a.className = "hover:bg-black/[0.05] p-2 rounded text-start"
+        a.className = "hover:bg-black/[0.1] p-2 rounded text-start"
         a.href = "#"
         a.onclick = function () {handleClick(chat)}
         a.appendChild(text)
+        a.id = chat
 
         if (channel["type"] == "restricted-announcements") {
           announcements.appendChild(a)
@@ -128,10 +128,11 @@
         let a = document.createElement("button")
         let text = document.createTextNode(channel["name"])
 
-        a.className = "hover:bg-black/[0.05] p-2 rounded text-start"
+        a.className = "hover:bg-black/[0.1] p-2 rounded text-start"
         a.href = "#"
         a.onclick = function () {handleClick(chat)}
         a.appendChild(text)
+        a.id = chat
 
         if (channel["type"] == "announcements") {
           announcements.appendChild(a)
@@ -162,8 +163,22 @@
 
     channelid.setValue(id)
 
+    queries.childNodes.forEach(child => {
+      child.className = "hover:bg-black/[0.1] p-2 rounded text-start"
+
+    })
+    announcements.childNodes.forEach(child => {
+      child.className = "hover:bg-black/[0.1] p-2 rounded text-start"
+
+    })
+
+    let channel = document.getElementById(channelid.Value())
+    channel.className = "hover:bg-black/[0.1] p-2 rounded text-start bg-black/[0.05]"
+
     let chat = chats.Value()[channelid.Value()]
     chatwindow.innerHTML = ""
+
+    checkbox.checked = chat["AI_enabled"]
 
     if (chat["type"] == "announcements" || chat["type"] == "restricted-announcements") {
       inp.className = "rounded-3xl p-4 flex-grow bg-black/[0.045] cursor-not-allowed"
@@ -187,7 +202,7 @@
     for (i in chat["messages"]) {
       let div = document.createElement("div")
 
-      if (chat["messages"][i]["role"] == "Exunite") {
+      if (chat["messages"][i]["role"] == "Exunite" || chat["messages"][i]["role"] == "Exun AI") {
         div.className = "hover:bg-black/[0.05] flex gap-5 p-5 items-center"
       } else {
         div.className = "hover:bg-black/[0.05] flex flex-row-reverse gap-5 p-5 items-center text-right"
@@ -261,9 +276,6 @@
     queryname.setValue("")
 
     handleQuery(close)
-
-
-
   })
 
   function handleQuery(state) {
@@ -273,4 +285,8 @@
       createQuery.close()
     }
   }
+
+  checkbox.addEventListener("click", async (e) => {
+    let res = await (await fetch(`/api/toggle_ai?channel=${channelid.Value()}&toggle=${checkbox.checked}`)).json()
+  })
 </script>

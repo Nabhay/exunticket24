@@ -151,12 +151,15 @@ def send_message_user():
                 channels_response = requests.get(f'{db_ip}/get', params={'table': 'channels', 'key': channel_id})
                 if channels_response.status_code == 200:
                     channel_data = json.loads(channels_response.text)
+
                     # Step 4: Check if AI is enabled for the channel
                     if channel_data.get('AI_enabled') == 'true':
                         ai_response = requests.get(
                             f'{ai_ip}/send_message_ai',
                             params={"channel_id": channel_id, "message": message}
                         )
+
+                        print("helo")
 
                         if ai_response.status_code == 200:
                             return ai_response.json(), 200

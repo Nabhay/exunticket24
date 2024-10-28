@@ -86,7 +86,7 @@ async def send_message_ai():
         except json.JSONDecodeError:
             return jsonify({"error": "Received non-JSON response from the API."}), 500
         
-        send_message = requests.get(f'{db_ip}/send_message?channel={channel_id}&user=Exun AI&message={response_data['response']}')
+        send_message = requests.get(f"{db_ip}/send_message?channel={channel_id}&user=Exun AI&message={response_data['response']}")
         if response_data['create_ticket'] == "true":
             toggle_ai = requests.get(f'{db_ip}/toggle_ai?channel={channel_id}&toggle=false')
 
