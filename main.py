@@ -10,6 +10,7 @@ import aiohttp
 import os
 import tracemalloc
 import re
+import time
 
 tracemalloc.start()
 
@@ -200,13 +201,7 @@ def create_channel_api():
             create_data = create_response.json()
             if create_data.get('success'):
                 channel_id = create_data.get('channel_id')
-
-                send_params = {
-                    'channel': channel_id,
-                    'message': message,
-                    'user': user
-                }
-                send_response = send_message_to_channel(user=user, message=message, channel_id=channel_id)
+                send_response = send_message_to_channel(user, message, str(channel_id))
 
                 if send_response.status_code == 200:
                     return json.dumps({"success": True, "message": "Channel created and message sent successfully."}), 200
