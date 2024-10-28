@@ -18,7 +18,7 @@ app = Flask(__name__)
 salt = secret_parser.parse("variables.txt")["SALT"]
 db_ip = secret_parser.parse("variables.txt")["DB_IP"]
 ai_ip = secret_parser.parse("variables.txt")["AI_IP"]
-
+main_ip = secret_parser.parse("variables.txt")["MAIN_IP"]
 # Embedding daisyui and tailwind styles
 daisyui = "<script>" + open("public/pako.js").read() + "</script>" + """<script>
     function decompressGzippedString(base64String) {
@@ -201,7 +201,7 @@ def create_channel_api():
                     'message': message,
                     'user': user
                 }
-                send_response = requests.get(f'{db_ip}/send_message', params=send_params)
+                send_response = requests.get(f'{main_ip}/api/send_message', params=send_params)
 
                 if send_response.status_code == 200:
                     return json.dumps({"success": True, "message": "Channel created and message sent successfully."}), 200
