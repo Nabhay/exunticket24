@@ -199,13 +199,14 @@
       chatwindow.appendChild(div)
 
     }
+
     for (i in chat["messages"]) {
       let div = document.createElement("div")
 
       if (chat["messages"][i]["role"] == "Exunite" || chat["messages"][i]["role"] == "Exun AI") {
-        div.className = "hover:bg-black/[0.05] flex gap-5 p-5 items-center"
+        div.className = "hover:bg-black/[0.05] flex gap-5 p-5 items-top"
       } else {
-        div.className = "hover:bg-black/[0.05] flex flex-row-reverse gap-5 p-5 items-center text-right"
+        div.className = "hover:bg-black/[0.05] flex flex-row-reverse gap-5 p-5 items-top text-right"
       }
 
       let img = document.createElement("img")
