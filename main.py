@@ -119,11 +119,21 @@ def send_message_to_channel(user, message, channel_id):
         access_response = requests.get(f'{db_ip}/get', params={'table': 'user_access', 'key': user})
         if access_response.status_code != 200:
             return json.dumps({"error": "Failed to fetch user access"}), 500
-        allowed_channels = str(access_response.content)
+
+        allowed_channels = access_response.json().get("channels", [])
         if channel_id not in allowed_channels:
             return json.dumps({'error': 'User does not have access to this channel'}), 403
 
-        # Step 2: Send the message via the backer backend
+        # Step 2: Fetch channel data only once and check restrictions
+        channel_response = requests.get(f'{db_ip}/get', params={'table': 'channels', 'key': channel_id})
+        if channel_response.status_code != 200:
+            return json.dumps({"error": "Channel not found"}), 500
+
+        channel_data = channel_response.json()
+        if "restricted-announcements" in channel_data.get("type", "").lower():
+            return json.dumps({'error': 'User cannot send messages to restricted-announcements channels'}), 403
+
+        # Step 3: Send the message via the backend
         send_response = requests.get(f'{db_ip}/send_message', params={'channel': channel_id, 'message': message, 'user': user})
         
         if send_response.status_code == 429:
@@ -132,23 +142,17 @@ def send_message_to_channel(user, message, channel_id):
         if send_response.status_code == 200:
             send_result = send_response.json()
 
-            # Step 3: If the message was successfully sent, check if AI is enabled
-            if send_result.get('success'):
-                channels_response = requests.get(f'{db_ip}/get', params={'table': 'channels', 'key': channel_id})
-                if channels_response.status_code == 200:
-                    channel_data = json.loads(channels_response.text)
-
-                    # Step 4: Check if AI is enabled for the channel
-                    if str(channel_data.get('AI_enabled')).lower() == "true":
-                        ai_response = requests.get(
-                            f'{ai_ip}/send_message_ai',
-                            params={"channel_id": channel_id, "message": message}
-                        )
-
-                        if ai_response.status_code == 200:
-                            return ai_response, 200
-                        else:
-                            return json.dumps({"error": "Failed to contact AI service"}), 500
+            # Step 4: If the message was successfully sent, check if AI is enabled
+            if send_result.get('success') and channel_data.get('AI_enabled', "").lower() == "true":
+                ai_response = requests.get(
+                    f'{ai_ip}/send_message_ai',
+                    params={"channel_id": channel_id, "message": message}
+                )
+                
+                if ai_response.status_code == 200:
+                    return ai_response.json(), 200
+                else:
+                    return json.dumps({"error": "Failed to contact AI service"}), 500
 
             return send_result, 200
 
@@ -157,7 +161,7 @@ def send_message_to_channel(user, message, channel_id):
 
     except requests.exceptions.RequestException as e:
         print(f"Error communicating with the backend: {e}")
-        return {"error": "Failed to communicate with the backend"}, 500
+        return json.dumps({"error": "Failed to communicate with the backend"}), 500
 
 # API endpoint that calls the helper function
 @app.get('/api/send_message')
