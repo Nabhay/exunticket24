@@ -54,6 +54,8 @@ class Flask(Flask):
                     return FlaskClass.response_class(MonsterDefault+object.render)
             else:
                 return FlaskClass.response_class(MonsterSave+object.render)
+        if object is flask.Response:
+            return object
         return super().make_response(object)
 
 def set_headers(response, path):

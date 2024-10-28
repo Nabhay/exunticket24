@@ -4,13 +4,7 @@ import sys, json
 import hashlib, base64
 import secret_parser
 import requests, hashlib
-import docs
-import resend
-import aiohttp
-import os
 import tracemalloc
-import re
-import time
 
 tracemalloc.start()
 

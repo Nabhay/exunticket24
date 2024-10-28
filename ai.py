@@ -89,6 +89,8 @@ async def send_message_ai():
         send_message = requests.get(f"{db_ip}/send_message?channel={channel_id}&user=Exun AI&message={response_data['response']}")
         if response_data['create_ticket'] == "true":
             toggle_ai = requests.get(f'{db_ip}/toggle_ai?channel={channel_id}&toggle=false')
+            requests.get(f"{db_ip}/send_message?channel={channel_id}&user=Exun AI&message=This conversation will now soon be handled by a human. Kindly mail exun@dpsrkp.net if required.")
+            requests.get(f"{db_ip}/send_message?channel={channel_id}&user=Exun AI&message=@handlers&store=false")
 
         # Increment the request count
         request_count += 1

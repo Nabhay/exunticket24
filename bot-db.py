@@ -152,20 +152,21 @@ async def create_channels(name: str, category: str, user):
         return {"error": str(e)}
 
 
-async def send_message(user_message, identifier, channel_id):
+async def send_message(user_message, identifier, channel_id, store=True):
     try:
         channel = bot.get_channel(channel_id)
         channels = json.loads(conn_table["channels"].get(channel_id))
         message = await channel.send(f"`{identifier}: {user_message}`")
-        channels["messages"].append(
-            {
-                "role": identifier,
-                "message": user_message,
-                "time": message.created_at.timestamp(),
-                "message_id": message.id,
-            }
-        )
-        conn_table["channels"].set(channel_id, json.dumps(channels))
+        if store:
+            channels["messages"].append(
+                {
+                    "role": identifier,
+                    "message": user_message,
+                    "time": message.created_at.timestamp(),
+                    "message_id": message.id,
+                }
+            )
+            conn_table["channels"].set(channel_id, json.dumps(channels))
         return {"success": True}
 
     except Exception as e:
@@ -223,6 +224,11 @@ async def send_message_api():
     channel = request.args.get("channel")
     message = request.args.get("message")
     user = request.args.get("user")
+    store = True
+    try:
+        store=json.loads(request.args.get("store").lower())
+    except:
+        pass
 
     try:
         current_time = time.time()
@@ -230,7 +236,7 @@ async def send_message_api():
         # Bypass rate limit for Exun AI
         if user == "Exun AI":
             result = await send_message(
-                channel_id=int(channel), user_message=message, identifier=user
+                channel_id=int(channel), user_message=message, identifier=user, store=store
             )
             return jsonify(result), 200 if "success" in result else 400
 
@@ -244,7 +250,7 @@ async def send_message_api():
         ]
 
         # Check if the user has hit the rate limit
-        if len(user_rate_limit[user]) >= RATE_LIMIT_MAX_MESSAGES:
+        if False:
             return (
                 jsonify(
                     {
